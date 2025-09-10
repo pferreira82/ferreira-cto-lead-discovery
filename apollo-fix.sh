@@ -1,110 +1,10 @@
 #!/bin/bash
 
-echo "Fixing API Route for Enhanced Apollo Service"
-echo "==========================================="
+echo "Fixing Company Location Extraction"
+echo "================================="
 
-# Fix the API route to use the correct method name and enhanced functionality
-echo "Creating fixed API route..."
-cat > app/api/discovery/search/route.ts << 'EOF'
-import { NextRequest, NextResponse } from 'next/server'
-import { ApolloService } from '@/lib/services/apollo'
-
-export async function POST(request: NextRequest) {
-  try {
-    const searchCriteria = await request.json()
-    
-    console.log('Discovery search criteria:', searchCriteria)
-
-    // Initialize Apollo service
-    const apollo = new ApolloService()
-
-    let results
-    
-    // Use enhanced search with proper progress tracking
-    if (searchCriteria.includeVCs) {
-      // Enhanced search with VCs
-      results = await apollo.searchCompaniesWithExecutives(
-        searchCriteria,
-        (step: string, current: number, total: number) => {
-          console.log(`Progress: ${step} (${current}/${total})`)
-        }
-      )
-    } else {
-      // Company-only search
-      results = await apollo.searchCompaniesWithExecutives(
-        searchCriteria,
-        (step: string, current: number, total: number) => {
-          console.log(`Progress: ${step} (${current}/${total})`)
-        }
-      )
-    }
-
-    // Transform results to match expected format
-    const transformedLeads = results.companies.map((company: any) => ({
-      id: company.id,
-      company: company.name,
-      website: company.website_url,
-      industry: company.industry || 'Unknown',
-      fundingStage: company.funding_info?.stage || company.latest_funding_stage,
-      description: company.description || `${company.name} is a company in the ${company.industry || 'biotech'} industry.`,
-      location: company.location || 'Unknown',
-      totalFunding: company.funding_info?.total_funding || company.total_funding,
-      employeeCount: company.estimated_num_employees || company.organization_headcount,
-      foundedYear: company.founded_year,
-      ai_score: company.ai_score,
-      domain: company.domain,
-      funding_info: company.funding_info,
-      contacts: company.contacts || []
-    }))
-
-    // Transform VC contacts
-    const transformedVCs = (results.vcContacts || []).map((vc: any) => ({
-      name: vc.name,
-      title: vc.title,
-      email: vc.email,
-      role_category: vc.role_category,
-      linkedin: vc.linkedin,
-      seniority: vc.seniority,
-      photo_url: vc.photo_url,
-      location: vc.location,
-      organization: vc.organization,
-      organization_domain: vc.organization_domain
-    }))
-
-    console.log(`Search completed: ${transformedLeads.length} companies, ${results.totalContacts} contacts, ${transformedVCs.length} VCs`)
-
-    return NextResponse.json({
-      success: true,
-      leads: transformedLeads,
-      vcContacts: transformedVCs,
-      totalCompanies: results.totalCompanies,
-      totalContacts: results.totalContacts,
-      pagination: results.pagination
-    })
-
-  } catch (error) {
-    console.error('Apollo API Error:', error)
-    
-    // Return more specific error information
-    let errorMessage = 'Failed to search companies'
-    if (error instanceof Error) {
-      errorMessage = error.message
-    }
-
-    return NextResponse.json(
-      { 
-        success: false, 
-        message: errorMessage,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    )
-  }
-}
-EOF
-
-# Also need to ensure the Apollo service method name is consistent
-echo "Fixing Apollo service method name..."
+# Enhanced Apollo service with better location debugging and extraction
+echo "Creating Apollo service with enhanced location extraction..."
 cat > lib/services/apollo.ts << 'EOF'
 interface ApolloCompany {
   id: string
@@ -125,7 +25,13 @@ interface ApolloCompany {
     state?: string
     country?: string
   }
+  // Alternative location fields that might exist
+  location?: string
+  city?: string
+  state?: string
+  country?: string
   formatted_location?: string
+  address?: string
   phone?: string
   linkedin_url?: string
   twitter_url?: string
@@ -312,6 +218,14 @@ class ApolloService {
     
     console.log(`Found ${companies.length} companies`)
     
+    // DEBUG: Log the first company's structure to see available fields
+    if (companies.length > 0) {
+      console.log('=== DEBUGGING COMPANY LOCATION FIELDS ===')
+      console.log('First company data structure:', JSON.stringify(companies[0], null, 2))
+      console.log('Available fields:', Object.keys(companies[0]))
+      console.log('=== END DEBUG ===')
+    }
+    
     if (companies.length === 0) {
       return {
         companies: [],
@@ -372,11 +286,14 @@ class ApolloService {
         }
 
         // Enhanced company data with proper location formatting
+        const companyLocation = this.extractCompanyLocation(company, searchCriteria.locations)
+        console.log(`Location for ${company.name}: ${companyLocation}`)
+        
         const enhancedCompany = {
           ...company,
           contacts: contacts,
           domain: domain,
-          location: this.formatCompanyLocation(company),
+          location: companyLocation,
           funding_info: {
             stage: company.latest_funding_stage,
             amount: company.latest_funding_amount,
@@ -398,7 +315,7 @@ class ApolloService {
           ...company,
           contacts: [],
           domain: company.primary_domain || 'unknown',
-          location: this.formatCompanyLocation(company)
+          location: this.extractCompanyLocation(company, searchCriteria.locations)
         })
       }
     }
@@ -456,20 +373,90 @@ class ApolloService {
     return result
   }
 
-  private formatCompanyLocation(company: any): string {
-    // Try headquarters_address first
+  // ENHANCED: Multiple approaches to extract company location
+  private extractCompanyLocation(company: any, searchLocations?: string[]): string {
+    console.log(`Extracting location for ${company.name}:`, {
+      headquarters_address: company.headquarters_address,
+      location: company.location,
+      city: company.city,
+      state: company.state,
+      country: company.country,
+      formatted_location: company.formatted_location,
+      address: company.address
+    })
+
+    // Method 1: headquarters_address object
     if (company.headquarters_address) {
       const addr = company.headquarters_address
       const parts = [addr.city, addr.state, addr.country].filter(Boolean)
-      if (parts.length > 0) return parts.join(', ')
+      if (parts.length > 0) {
+        const location = parts.join(', ')
+        console.log(`Using headquarters_address: ${location}`)
+        return location
+      }
     }
     
-    // Try formatted_location
+    // Method 2: Direct location field
+    if (company.location) {
+      console.log(`Using direct location field: ${company.location}`)
+      return company.location
+    }
+    
+    // Method 3: formatted_location field
     if (company.formatted_location) {
+      console.log(`Using formatted_location: ${company.formatted_location}`)
       return company.formatted_location
     }
     
-    // Fallback to 'Unknown'
+    // Method 4: Individual city/state/country fields
+    if (company.city || company.state || company.country) {
+      const parts = [company.city, company.state, company.country].filter(Boolean)
+      if (parts.length > 0) {
+        const location = parts.join(', ')
+        console.log(`Using individual fields: ${location}`)
+        return location
+      }
+    }
+    
+    // Method 5: Parse from address field
+    if (company.address) {
+      console.log(`Using address field: ${company.address}`)
+      return company.address
+    }
+    
+    // Method 6: Extract from website domain (rough approximation)
+    if (company.website_url || company.primary_domain) {
+      const domain = company.primary_domain || company.website_url
+      if (domain) {
+        // Common patterns for location in domain names
+        if (domain.includes('.uk') || domain.includes('co.uk')) {
+          console.log('Inferred from domain: United Kingdom')
+          return 'United Kingdom'
+        }
+        if (domain.includes('.de')) {
+          console.log('Inferred from domain: Germany')
+          return 'Germany'
+        }
+        if (domain.includes('.fr')) {
+          console.log('Inferred from domain: France')
+          return 'France'
+        }
+        if (domain.includes('.ca')) {
+          console.log('Inferred from domain: Canada')
+          return 'Canada'
+        }
+      }
+    }
+    
+    // Method 7: Use search location as fallback (since we filtered by location)
+    if (searchLocations && searchLocations.length > 0) {
+      // Use the first search location as fallback since companies should match one of them
+      const fallbackLocation = searchLocations[0]
+      console.log(`Using search location fallback: ${fallbackLocation}`)
+      return fallbackLocation
+    }
+    
+    console.log('No location found, using Unknown')
     return 'Unknown'
   }
 
@@ -539,7 +526,6 @@ class ApolloService {
     return 'Executive'
   }
 
-  // FIXED: Renamed from buildEnhancedSearchParams to buildSearchParams
   buildSearchParams(searchCriteria: any): ApolloCompanySearchParams {
     const params: ApolloCompanySearchParams = {
       page: 1,
@@ -622,13 +608,24 @@ export function formatLocation(address?: { city?: string; state?: string; countr
 EOF
 
 echo ""
-echo "API Route and Apollo Service Fixed!"
-echo "=================================="
+echo "Enhanced Location Extraction Complete!"
+echo "===================================="
 echo ""
-echo "✅ Fixed method name: buildSearchParams (was buildEnhancedSearchParams)"
-echo "✅ Enhanced API route with better error handling"
-echo "✅ Added proper data transformation for frontend"
-echo "✅ Added console logging for debugging"
+echo "✅ Added comprehensive location field debugging"
+echo "✅ Multiple fallback methods for location extraction:"
+echo "   1. headquarters_address object"
+echo "   2. Direct location field"
+echo "   3. formatted_location field" 
+echo "   4. Individual city/state/country fields"
+echo "   5. Address field parsing"
+echo "   6. Domain-based inference (.uk, .de, etc.)"
+echo "   7. Search location fallback"
 echo ""
-echo "The search should now work properly. Try the discovery again!"
+echo "✅ Added detailed console logging to debug available fields"
+echo ""
+echo "Now run the search again and check the console logs."
+echo "You'll see exactly what location fields Apollo returns."
+echo "This will help identify the correct field to use."
+echo ""
+echo "The system will now try 7 different methods to extract location!"
 echo ""

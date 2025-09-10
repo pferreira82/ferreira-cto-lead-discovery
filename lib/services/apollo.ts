@@ -17,7 +17,13 @@ interface ApolloCompany {
     state?: string
     country?: string
   }
+  // Alternative location fields that might exist
+  location?: string
+  city?: string
+  state?: string
+  country?: string
   formatted_location?: string
+  address?: string
   phone?: string
   linkedin_url?: string
   twitter_url?: string
@@ -204,6 +210,14 @@ class ApolloService {
     
     console.log(`Found ${companies.length} companies`)
     
+    // DEBUG: Log the first company's structure to see available fields
+    if (companies.length > 0) {
+      console.log('=== DEBUGGING COMPANY LOCATION FIELDS ===')
+      console.log('First company data structure:', JSON.stringify(companies[0], null, 2))
+      console.log('Available fields:', Object.keys(companies[0]))
+      console.log('=== END DEBUG ===')
+    }
+    
     if (companies.length === 0) {
       return {
         companies: [],
@@ -264,11 +278,14 @@ class ApolloService {
         }
 
         // Enhanced company data with proper location formatting
+        const companyLocation = this.extractCompanyLocation(company, searchCriteria.locations)
+        console.log(`Location for ${company.name}: ${companyLocation}`)
+        
         const enhancedCompany = {
           ...company,
           contacts: contacts,
           domain: domain,
-          location: this.formatCompanyLocation(company),
+          location: companyLocation,
           funding_info: {
             stage: company.latest_funding_stage,
             amount: company.latest_funding_amount,
@@ -290,7 +307,7 @@ class ApolloService {
           ...company,
           contacts: [],
           domain: company.primary_domain || 'unknown',
-          location: this.formatCompanyLocation(company)
+          location: this.extractCompanyLocation(company, searchCriteria.locations)
         })
       }
     }
@@ -348,20 +365,90 @@ class ApolloService {
     return result
   }
 
-  private formatCompanyLocation(company: any): string {
-    // Try headquarters_address first
+  // ENHANCED: Multiple approaches to extract company location
+  private extractCompanyLocation(company: any, searchLocations?: string[]): string {
+    console.log(`Extracting location for ${company.name}:`, {
+      headquarters_address: company.headquarters_address,
+      location: company.location,
+      city: company.city,
+      state: company.state,
+      country: company.country,
+      formatted_location: company.formatted_location,
+      address: company.address
+    })
+
+    // Method 1: headquarters_address object
     if (company.headquarters_address) {
       const addr = company.headquarters_address
       const parts = [addr.city, addr.state, addr.country].filter(Boolean)
-      if (parts.length > 0) return parts.join(', ')
+      if (parts.length > 0) {
+        const location = parts.join(', ')
+        console.log(`Using headquarters_address: ${location}`)
+        return location
+      }
     }
     
-    // Try formatted_location
+    // Method 2: Direct location field
+    if (company.location) {
+      console.log(`Using direct location field: ${company.location}`)
+      return company.location
+    }
+    
+    // Method 3: formatted_location field
     if (company.formatted_location) {
+      console.log(`Using formatted_location: ${company.formatted_location}`)
       return company.formatted_location
     }
     
-    // Fallback to 'Unknown'
+    // Method 4: Individual city/state/country fields
+    if (company.city || company.state || company.country) {
+      const parts = [company.city, company.state, company.country].filter(Boolean)
+      if (parts.length > 0) {
+        const location = parts.join(', ')
+        console.log(`Using individual fields: ${location}`)
+        return location
+      }
+    }
+    
+    // Method 5: Parse from address field
+    if (company.address) {
+      console.log(`Using address field: ${company.address}`)
+      return company.address
+    }
+    
+    // Method 6: Extract from website domain (rough approximation)
+    if (company.website_url || company.primary_domain) {
+      const domain = company.primary_domain || company.website_url
+      if (domain) {
+        // Common patterns for location in domain names
+        if (domain.includes('.uk') || domain.includes('co.uk')) {
+          console.log('Inferred from domain: United Kingdom')
+          return 'United Kingdom'
+        }
+        if (domain.includes('.de')) {
+          console.log('Inferred from domain: Germany')
+          return 'Germany'
+        }
+        if (domain.includes('.fr')) {
+          console.log('Inferred from domain: France')
+          return 'France'
+        }
+        if (domain.includes('.ca')) {
+          console.log('Inferred from domain: Canada')
+          return 'Canada'
+        }
+      }
+    }
+    
+    // Method 7: Use search location as fallback (since we filtered by location)
+    if (searchLocations && searchLocations.length > 0) {
+      // Use the first search location as fallback since companies should match one of them
+      const fallbackLocation = searchLocations[0]
+      console.log(`Using search location fallback: ${fallbackLocation}`)
+      return fallbackLocation
+    }
+    
+    console.log('No location found, using Unknown')
     return 'Unknown'
   }
 
@@ -431,7 +518,6 @@ class ApolloService {
     return 'Executive'
   }
 
-  // FIXED: Renamed from buildEnhancedSearchParams to buildSearchParams
   buildSearchParams(searchCriteria: any): ApolloCompanySearchParams {
     const params: ApolloCompanySearchParams = {
       page: 1,
