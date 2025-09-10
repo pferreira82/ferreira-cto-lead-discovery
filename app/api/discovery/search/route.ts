@@ -10,45 +10,55 @@ export async function POST(request: NextRequest) {
     // Initialize Apollo service
     const apollo = new ApolloService()
 
-    let results
-    
-    // Use enhanced search with proper progress tracking
-    if (searchCriteria.includeVCs) {
-      // Enhanced search with VCs
-      results = await apollo.searchCompaniesWithExecutives(
-        searchCriteria,
-        (step: string, current: number, total: number) => {
-          console.log(`Progress: ${step} (${current}/${total})`)
-        }
-      )
-    } else {
-      // Company-only search
-      results = await apollo.searchCompaniesWithExecutives(
-        searchCriteria,
-        (step: string, current: number, total: number) => {
-          console.log(`Progress: ${step} (${current}/${total})`)
-        }
-      )
-    }
+    // Use enhanced search with complete organization details
+    const results = await apollo.searchCompaniesWithExecutives(
+      searchCriteria,
+      (step: string, current: number, total: number) => {
+        console.log(`Progress: ${step} (${current}/${total})`)
+      }
+    )
 
-    // Transform results to match expected format
-    const transformedLeads = results.companies.map((company: any) => ({
-      id: company.id,
-      company: company.name,
-      website: company.website_url,
-      industry: company.industry || 'Unknown',
-      fundingStage: company.funding_info?.stage || company.latest_funding_stage,
-      description: company.description || `${company.name} is a company in the ${company.industry || 'biotech'} industry.`,
-      location: company.location, // Short format for table
-      full_address: company.full_address, // Full format for detail view
-      totalFunding: company.funding_info?.total_funding || company.total_funding,
-      employeeCount: company.estimated_num_employees || company.organization_headcount,
-      foundedYear: company.founded_year,
-      ai_score: company.ai_score,
-      domain: company.domain,
-      funding_info: company.funding_info,
-      contacts: company.contacts || []
-    }))
+    // Transform results with RICH DATA from complete organization info
+    const transformedLeads = results.companies.map((company: any) => {
+      return {
+        id: company.id,
+        company: company.name,
+        website: company.website_url,
+        industry: company.industry || 'Unknown',
+        fundingStage: company.funding_info?.stage || company.latest_funding_stage,
+        description: company.short_description || company.description || `${company.name} is a company in the ${company.industry || 'biotech'} industry.`,
+        location: company.location || 'Unknown', // Short format for table
+        full_address: company.full_address || company.raw_address || company.location || 'Unknown', // Full format for detail view
+        totalFunding: company.funding_info?.total_funding || company.total_funding,
+        totalFundingPrinted: company.funding_info?.total_funding_printed || company.total_funding_printed,
+        employeeCount: company.estimated_num_employees || company.organization_headcount,
+        foundedYear: company.founded_year,
+        ai_score: company.ai_score,
+        domain: company.domain,
+        logo_url: company.logo_url,
+        // RICH FUNDING DATA
+        funding_info: {
+          ...company.funding_info,
+          events: company.funding_events || []
+        },
+        // RICH COMPANY DATA
+        short_description: company.short_description,
+        revenue_info: company.revenue_info,
+        latest_investors: company.latest_investors,
+        all_investors: company.all_investors,
+        keywords: company.keywords || [],
+        // LOCATION DATA
+        address_components: {
+          street_address: company.street_address,
+          city: company.city,
+          state: company.state,
+          postal_code: company.postal_code,
+          country: company.country,
+          raw_address: company.raw_address
+        },
+        contacts: company.contacts || []
+      }
+    })
 
     // Transform VC contacts
     const transformedVCs = (results.vcContacts || []).map((vc: any) => ({
@@ -64,7 +74,7 @@ export async function POST(request: NextRequest) {
       organization_domain: vc.organization_domain
     }))
 
-    console.log(`Search completed: ${transformedLeads.length} companies, ${results.totalContacts} contacts, ${transformedVCs.length} VCs`)
+    console.log(`Enhanced search completed: ${transformedLeads.length} companies with full details, ${results.totalContacts} contacts, ${transformedVCs.length} VCs`)
 
     return NextResponse.json({
       success: true,
@@ -78,7 +88,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Apollo API Error:', error)
     
-    // Return more specific error information
     let errorMessage = 'Failed to search companies'
     if (error instanceof Error) {
       errorMessage = error.message

@@ -33,6 +33,46 @@ interface ApolloCompany {
   organization_headcount?: number
 }
 
+interface ApolloOrganizationDetail {
+  id: string
+  name: string
+  website_url?: string
+  linkedin_url?: string
+  twitter_url?: string
+  facebook_url?: string
+  founded_year?: number
+  logo_url?: string
+  primary_domain?: string
+  industry?: string
+  estimated_num_employees?: number
+  keywords?: string[]
+  industries?: string[]
+  // RICH LOCATION DATA
+  raw_address?: string
+  street_address?: string
+  city?: string
+  state?: string
+  postal_code?: string
+  country?: string
+  // RICH COMPANY DATA
+  short_description?: string
+  annual_revenue?: number
+  annual_revenue_printed?: string
+  total_funding?: number
+  total_funding_printed?: string
+  latest_funding_round_date?: string
+  latest_funding_stage?: string
+  funding_events?: Array<{
+    id: string
+    date: string
+    type: string
+    investors: string
+    amount: string
+    currency: string
+    news_url?: string
+  }>
+}
+
 interface ApolloPerson {
   id: string
   first_name: string
@@ -107,6 +147,10 @@ interface ApolloContactsResponse {
   }
 }
 
+interface ApolloOrganizationDetailResponse {
+  organization: ApolloOrganizationDetail
+}
+
 class ApolloService {
   private apiKey: string
   private baseUrl = 'https://api.apollo.io/api/v1'
@@ -119,22 +163,28 @@ class ApolloService {
     this.apiKey = apiKey
   }
 
-  private async makeRequest(endpoint: string, params: any = {}): Promise<any> {
+  private async makeRequest(endpoint: string, params: any = {}, method: string = 'POST'): Promise<any> {
     const url = `${this.baseUrl}${endpoint}`
     
-    console.log(`Apollo ${endpoint} Request:`, JSON.stringify(params, null, 2))
+    const options: RequestInit = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        'Accept': 'application/json',
+        'X-Api-Key': this.apiKey
+      }
+    }
+
+    if (method === 'POST') {
+      console.log(`Apollo ${endpoint} Request:`, JSON.stringify(params, null, 2))
+      options.body = JSON.stringify(params)
+    } else {
+      console.log(`Apollo ${endpoint} Request (${method}):`, url)
+    }
 
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-          'Accept': 'application/json',
-          'X-Api-Key': this.apiKey
-        },
-        body: JSON.stringify(params)
-      })
+      const response = await fetch(url, options)
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -146,6 +196,7 @@ class ApolloService {
       console.log(`Apollo ${endpoint} Response:`, {
         organizations: data.organizations?.length || 0,
         people: data.people?.length || 0,
+        organization: data.organization ? 'Found' : 'Not found',
         pagination: data.pagination
       })
 
@@ -158,6 +209,11 @@ class ApolloService {
 
   async searchCompanies(params: ApolloCompanySearchParams): Promise<ApolloSearchResponse> {
     return this.makeRequest('/mixed_companies/search', params)
+  }
+
+  // NEW: Get complete organization details
+  async getOrganizationDetail(organizationId: string): Promise<ApolloOrganizationDetailResponse> {
+    return this.makeRequest(`/organizations/${organizationId}`, {}, 'GET')
   }
 
   // Enhanced contact search targeting executives and founders
@@ -194,31 +250,23 @@ class ApolloService {
     return this.makeRequest('/mixed_people/search', contactParams)
   }
 
-  // Enhanced company search with proper filtering
+  // ENHANCED: Company search with complete organization details
   async searchCompaniesWithExecutives(
     searchCriteria: any, 
     onProgress?: (step: string, current: number, total: number) => void
   ) {
-    // Step 1: Search companies with proper filtering
-    onProgress?.('🔍 Searching companies...', 0, 4)
+    // Step 1: Search companies with basic filtering
+    onProgress?.('🔍 Searching companies...', 0, 5)
     
     const apolloParams = this.buildSearchParams(searchCriteria)
     console.log('Company search params:', apolloParams)
     
     const companyResponse = await this.searchCompanies(apolloParams)
-    const companies = companyResponse.organizations || []
+    const basicCompanies = companyResponse.organizations || []
     
-    console.log(`Found ${companies.length} companies`)
+    console.log(`Found ${basicCompanies.length} companies`)
     
-    // DEBUG: Log the first company's structure to see available fields
-    if (companies.length > 0) {
-      console.log('=== DEBUGGING COMPANY LOCATION FIELDS ===')
-      console.log('First company data structure:', JSON.stringify(companies[0], null, 2))
-      console.log('Available fields:', Object.keys(companies[0]))
-      console.log('=== END DEBUG ===')
-    }
-    
-    if (companies.length === 0) {
+    if (basicCompanies.length === 0) {
       return {
         companies: [],
         totalCompanies: 0,
@@ -228,18 +276,56 @@ class ApolloService {
       }
     }
 
-    onProgress?.('👥 Finding executive contacts...', 1, 4)
+    // Step 2: Get complete organization details for each company
+    onProgress?.('📋 Getting complete company details...', 1, 5)
+    
+    const detailedCompanies = []
+    for (let i = 0; i < basicCompanies.length; i++) {
+      const basicCompany = basicCompanies[i]
+      
+      try {
+        if (i % 5 === 0) {
+          onProgress?.(`📋 Getting details for ${basicCompany.name}... (${i + 1}/${basicCompanies.length})`, 1, 5)
+        }
 
-    // Step 2: Get executive contacts for each company
+        console.log(`Getting complete details for ${basicCompany.name} (ID: ${basicCompany.id})`)
+        const detailResponse = await this.getOrganizationDetail(basicCompany.id)
+        const detailedOrg = detailResponse.organization
+
+        // Merge basic and detailed data
+        const enhancedCompany = {
+          ...basicCompany,
+          ...detailedOrg, // Detailed data takes precedence
+          // Ensure we keep the basic company fields that might not be in detailed
+          original_basic_data: basicCompany
+        }
+
+        detailedCompanies.push(enhancedCompany)
+
+        // Rate limiting between detail calls
+        if (i < basicCompanies.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200))
+        }
+
+      } catch (error) {
+        console.error(`Failed to get details for ${basicCompany.name}:`, error)
+        // Fall back to basic company data if detail call fails
+        detailedCompanies.push(basicCompany)
+      }
+    }
+
+    onProgress?.('👥 Finding executive contacts...', 2, 5)
+
+    // Step 3: Get executive contacts for each company
     const companiesWithContacts = []
     let totalContactsFound = 0
     
-    for (let i = 0; i < companies.length; i++) {
-      const company = companies[i]
+    for (let i = 0; i < detailedCompanies.length; i++) {
+      const company = detailedCompanies[i]
       
       try {
         if (i % 3 === 0) {
-          onProgress?.(`👥 Finding executives for ${company.name}... (${i + 1}/${companies.length})`, 1, 4)
+          onProgress?.(`👥 Finding executives for ${company.name}... (${i + 1}/${detailedCompanies.length})`, 2, 5)
         }
 
         // Extract domain
@@ -277,34 +363,43 @@ class ApolloService {
           console.warn(`No domain found for ${company.name}`)
         }
 
-        // Enhanced company data with dual location formats
-        const locationInfo = this.extractDualLocationFormats(company, searchCriteria.locations)
-        console.log(`Location for ${company.name}:`, locationInfo)
+        // ENHANCED: Extract location and company data from detailed API response
+        const locationInfo = this.extractLocationFromDetailedData(company)
+        const fundingInfo = this.extractFundingInfo(company)
         
         const enhancedCompany = {
           ...company,
           contacts: contacts,
           domain: domain,
-          location: locationInfo.short, // For table display
-          full_address: locationInfo.full, // For detail view
-          funding_info: {
-            stage: company.latest_funding_stage,
-            amount: company.latest_funding_amount,
-            total_funding: company.total_funding,
-            date: company.latest_funding_round_date
-          }
+          location: locationInfo.short, // Short format for table
+          full_address: locationInfo.full, // Full format for detail view
+          funding_info: fundingInfo,
+          short_description: company.short_description || company.description,
+          // Additional useful fields
+          revenue_info: {
+            annual_revenue: company.annual_revenue,
+            annual_revenue_printed: company.annual_revenue_printed
+          },
+          latest_investors: fundingInfo.latest_investors,
+          all_investors: this.extractAllInvestors(company.funding_events || [])
         }
+
+        console.log(`Enhanced company ${company.name}:`, {
+          location: locationInfo,
+          funding: fundingInfo,
+          description_length: company.short_description?.length || 0
+        })
 
         companiesWithContacts.push(enhancedCompany)
 
         // Rate limiting
-        if (i < companies.length - 1) {
+        if (i < detailedCompanies.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 150))
         }
         
       } catch (error) {
         console.error(`Failed to get contacts for ${company.name}:`, error)
-        const locationInfo = this.extractDualLocationFormats(company, searchCriteria.locations)
+        const locationInfo = this.extractLocationFromDetailedData(company)
         companiesWithContacts.push({
           ...company,
           contacts: [],
@@ -315,9 +410,9 @@ class ApolloService {
       }
     }
 
-    onProgress?.('💼 Finding VCs and investors...', 2, 4)
+    onProgress?.('💼 Finding VCs and investors...', 3, 5)
 
-    // Step 3: Search for VCs in the same locations
+    // Step 4: Search for VCs in the same locations
     let vcContacts = []
     if (searchCriteria.includeVCs && searchCriteria.locations?.length > 0) {
       try {
@@ -341,15 +436,15 @@ class ApolloService {
       }
     }
 
-    onProgress?.('🧠 Analyzing and scoring results...', 3, 4)
+    onProgress?.('🧠 Analyzing and scoring results...', 4, 5)
 
-    // Step 4: Calculate AI scores
+    // Step 5: Calculate AI scores
     const finalCompanies = companiesWithContacts.map(company => ({
       ...company,
       ai_score: this.calculateEnhancedAIScore(company, searchCriteria)
     }))
 
-    onProgress?.('✅ Complete!', 4, 4)
+    onProgress?.('✅ Complete!', 5, 5)
 
     const result = {
       companies: finalCompanies,
@@ -359,7 +454,7 @@ class ApolloService {
       pagination: companyResponse.pagination
     }
 
-    console.log('Final results:', {
+    console.log('Final enhanced results:', {
       companies: result.totalCompanies,
       contacts: result.totalContacts,
       vcs: result.vcContacts.length
@@ -368,104 +463,90 @@ class ApolloService {
     return result
   }
 
-  // NEW: Extract both short and full location formats
-  private extractDualLocationFormats(company: any, searchLocations?: string[]): { short: string, full: string } {
-    console.log(`Extracting dual location formats for ${company.name}:`, {
-      headquarters_address: company.headquarters_address,
-      location: company.location,
+  // NEW: Extract location from detailed organization data
+  private extractLocationFromDetailedData(company: any): { short: string, full: string } {
+    console.log(`\n=== EXTRACTING LOCATION from detailed data for ${company.name} ===`)
+    console.log('Detailed location fields:', {
+      raw_address: company.raw_address,
+      street_address: company.street_address,
       city: company.city,
       state: company.state,
-      country: company.country,
-      formatted_location: company.formatted_location,
-      address: company.address
+      postal_code: company.postal_code,
+      country: company.country
     })
 
-    let city = ''
-    let state = ''
-    let country = ''
-    let fullAddress = ''
+    let shortLocation = 'Unknown'
+    let fullLocation = 'Unknown'
 
-    // Method 1: headquarters_address object
-    if (company.headquarters_address) {
-      const addr = company.headquarters_address
-      city = addr.city || ''
-      state = addr.state || ''
-      country = addr.country || ''
-      fullAddress = [addr.city, addr.state, addr.country].filter(Boolean).join(', ')
-      console.log(`Using headquarters_address - City: ${city}, Country: ${country}, Full: ${fullAddress}`)
-    }
-    // Method 2: Individual fields
-    else if (company.city || company.state || company.country) {
-      city = company.city || ''
-      state = company.state || ''
-      country = company.country || ''
-      fullAddress = [city, state, country].filter(Boolean).join(', ')
-      console.log(`Using individual fields - City: ${city}, Country: ${country}, Full: ${fullAddress}`)
-    }
-    // Method 3: Parse from formatted location or direct location
-    else if (company.formatted_location || company.location) {
-      const locationStr = company.formatted_location || company.location
-      fullAddress = locationStr
-      
-      // Try to extract city and country from full location string
-      const parts = locationStr.split(',').map((s: string) => s.trim())
-      if (parts.length >= 2) {
-        city = parts[0] // First part is usually city
-        country = parts[parts.length - 1] // Last part is usually country
+    // Use the rich location data from detailed API
+    if (company.city || company.state || company.country) {
+      const city = company.city || ''
+      const state = company.state || ''
+      const country = company.country || ''
+
+      // Short format: City, Country
+      if (city && country) {
+        shortLocation = `${city}, ${country}`
+      } else if (city) {
+        shortLocation = city
+      } else if (country) {
+        shortLocation = country
       }
-      console.log(`Using formatted location - City: ${city}, Country: ${country}, Full: ${fullAddress}`)
-    }
-    // Method 4: Address field
-    else if (company.address) {
-      fullAddress = company.address
-      // Basic parsing attempt for city/country from address
-      const parts = company.address.split(',').map((s: string) => s.trim())
-      if (parts.length >= 2) {
-        city = parts[0]
-        country = parts[parts.length - 1]
-      }
-      console.log(`Using address field - City: ${city}, Country: ${country}, Full: ${fullAddress}`)
-    }
 
-    // Fallback methods if we still don't have location
-    if (!city && !country && !fullAddress) {
-      // Method 5: Domain inference
-      const domain = company.primary_domain || company.website_url
-      if (domain) {
-        if (domain.includes('.uk') || domain.includes('co.uk')) {
-          country = 'United Kingdom'
-          fullAddress = 'United Kingdom'
-        } else if (domain.includes('.de')) {
-          country = 'Germany'
-          fullAddress = 'Germany'
-        } else if (domain.includes('.fr')) {
-          country = 'France'
-          fullAddress = 'France'
-        } else if (domain.includes('.ca')) {
-          country = 'Canada'
-          fullAddress = 'Canada'
-        }
-        console.log(`Inferred from domain - Country: ${country}, Full: ${fullAddress}`)
+      // Full format: Use raw_address if available, otherwise build from components
+      if (company.raw_address) {
+        fullLocation = company.raw_address
+      } else if (company.street_address) {
+        const parts = [
+          company.street_address,
+          city,
+          state,
+          company.postal_code,
+          country
+        ].filter(Boolean)
+        fullLocation = parts.join(', ')
+      } else {
+        const parts = [city, state, country].filter(Boolean)
+        fullLocation = parts.join(', ')
       }
-      
-      // Method 6: Search location fallback
-      if (!country && searchLocations && searchLocations.length > 0) {
-        country = searchLocations[0]
-        fullAddress = searchLocations[0]
-        console.log(`Using search location fallback - Country: ${country}, Full: ${fullAddress}`)
-      }
+
+      console.log(`✅ Using detailed location data - Short: "${shortLocation}", Full: "${fullLocation}"`)
+    } else {
+      console.log('❌ No detailed location data available, using fallback')
+      shortLocation = 'Unknown'
+      fullLocation = 'Unknown'
     }
 
-    // Create short format (City, Country) and full format
-    const shortLocation = [city, country].filter(Boolean).join(', ') || fullAddress || 'Unknown'
-    const fullLocation = fullAddress || [city, state, country].filter(Boolean).join(', ') || 'Unknown'
+    return { short: shortLocation, full: fullLocation }
+  }
 
-    console.log(`Final formats - Short: "${shortLocation}", Full: "${fullLocation}"`)
-
+  // NEW: Extract funding information
+  private extractFundingInfo(company: any) {
+    const latestEvent = company.funding_events?.[0] // Most recent event
+    
     return {
-      short: shortLocation,
-      full: fullLocation
+      stage: company.latest_funding_stage,
+      amount: company.latest_funding_amount,
+      total_funding: company.total_funding,
+      total_funding_printed: company.total_funding_printed,
+      date: company.latest_funding_round_date,
+      latest_investors: latestEvent?.investors || '',
+      latest_amount_printed: latestEvent?.amount ? `${latestEvent.currency}${latestEvent.amount}` : undefined
     }
+  }
+
+  // NEW: Extract all investors from funding events
+  private extractAllInvestors(fundingEvents: any[]): string[] {
+    const allInvestors = new Set<string>()
+    
+    fundingEvents.forEach(event => {
+      if (event.investors) {
+        const investors = event.investors.split(',').map((inv: string) => inv.trim())
+        investors.forEach(investor => allInvestors.add(investor))
+      }
+    })
+    
+    return Array.from(allInvestors)
   }
 
   private calculateEnhancedAIScore(company: any, searchCriteria: any): number {
@@ -500,6 +581,12 @@ class ApolloService {
     if (company.founded_year && company.founded_year >= 2015) score += 5
     if (company.publicly_traded_symbol) score += 10
     if (company.total_funding && company.total_funding > 10000000) score += 8
+    
+    // Revenue boost
+    if (company.annual_revenue && company.annual_revenue > 50000000) score += 5
+    
+    // Description quality boost
+    if (company.short_description && company.short_description.length > 200) score += 3
     
     // Location boost for major tech hubs
     const majorHubs = ['san francisco', 'boston', 'new york', 'london', 'cambridge', 'palo alto', 'silicon valley']
@@ -540,13 +627,11 @@ class ApolloService {
       per_page: Math.min(searchCriteria.maxResults || 25, 50)
     }
 
-    // FIXED: Proper location filtering
     if (searchCriteria.locations && searchCriteria.locations.length > 0) {
       params.organization_locations = searchCriteria.locations
       console.log('Using locations:', searchCriteria.locations)
     }
 
-    // Enhanced industry keywords
     if (searchCriteria.industries && searchCriteria.industries.length > 0) {
       const industryKeywords = []
       
@@ -576,7 +661,6 @@ class ApolloService {
       console.log('Using industry keywords:', params.q_organization_keyword_tags)
     }
 
-    // FIXED: Funding stage filtering using funding amount ranges
     if (searchCriteria.fundingStages && searchCriteria.fundingStages.length > 0) {
       const hasEarly = searchCriteria.fundingStages.some((stage: string) => 
         ['Pre-Seed', 'Seed', 'Series A'].includes(stage))
@@ -584,20 +668,16 @@ class ApolloService {
         ['Series B', 'Series C', 'Series D+', 'Growth'].includes(stage))
 
       if (hasEarly && hasGrowth) {
-        // Both early and growth stage
         params.total_funding_range = { min: 1000000, max: 500000000 }
       } else if (hasEarly) {
-        // Early stage funding
         params.total_funding_range = { min: 100000, max: 50000000 }
       } else if (hasGrowth) {
-        // Growth stage funding
         params.total_funding_range = { min: 10000000, max: 1000000000 }
       }
       
       console.log('Using funding range:', params.total_funding_range)
     }
 
-    // Employee count filtering
     if (searchCriteria.employeeRanges && searchCriteria.employeeRanges.length > 0) {
       params.organization_num_employees_ranges = searchCriteria.employeeRanges
     }
