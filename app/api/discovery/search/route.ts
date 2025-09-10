@@ -39,7 +39,8 @@ export async function POST(request: NextRequest) {
       industry: company.industry || 'Unknown',
       fundingStage: company.funding_info?.stage || company.latest_funding_stage,
       description: company.description || `${company.name} is a company in the ${company.industry || 'biotech'} industry.`,
-      location: company.location || 'Unknown',
+      location: company.location, // Short format for table
+      full_address: company.full_address, // Full format for detail view
       totalFunding: company.funding_info?.total_funding || company.total_funding,
       employeeCount: company.estimated_num_employees || company.organization_headcount,
       foundedYear: company.founded_year,

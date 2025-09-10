@@ -58,7 +58,8 @@ interface DiscoveredLead {
   industry: string
   fundingStage?: string
   description: string
-  location: string
+  location: string // Short format (City, Country)
+  full_address?: string // Full address for detail view
   totalFunding?: number
   employeeCount?: number
   foundedYear?: number
@@ -734,6 +735,7 @@ export default function EnhancedLeadDiscoveryPage() {
                           <td className="p-3">
                             <div className="flex items-center text-sm text-gray-600">
                               <MapPin className="w-3 h-3 mr-1" />
+                              {/* SHORT FORMAT: City, Country */}
                               <span className="truncate max-w-[120px]">{lead.location}</span>
                             </div>
                           </td>
@@ -903,7 +905,8 @@ export default function EnhancedLeadDiscoveryPage() {
                   <h4 className="font-semibold mb-3">Company Information</h4>
                   <div className="space-y-2 text-sm">
                     <p><strong>Industry:</strong> {selectedLead.industry}</p>
-                    <p><strong>Location:</strong> {selectedLead.location}</p>
+                    {/* FULL ADDRESS: Complete location information */}
+                    <p><strong>Location:</strong> {selectedLead.full_address || selectedLead.location}</p>
                     {selectedLead.foundedYear && <p><strong>Founded:</strong> {selectedLead.foundedYear}</p>}
                     {selectedLead.employeeCount && <p><strong>Employees:</strong> ~{selectedLead.employeeCount}</p>}
                     {selectedLead.domain && <p><strong>Domain:</strong> {selectedLead.domain}</p>}

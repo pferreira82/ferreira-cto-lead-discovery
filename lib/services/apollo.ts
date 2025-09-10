@@ -277,15 +277,16 @@ class ApolloService {
           console.warn(`No domain found for ${company.name}`)
         }
 
-        // Enhanced company data with proper location formatting
-        const companyLocation = this.extractCompanyLocation(company, searchCriteria.locations)
-        console.log(`Location for ${company.name}: ${companyLocation}`)
+        // Enhanced company data with dual location formats
+        const locationInfo = this.extractDualLocationFormats(company, searchCriteria.locations)
+        console.log(`Location for ${company.name}:`, locationInfo)
         
         const enhancedCompany = {
           ...company,
           contacts: contacts,
           domain: domain,
-          location: companyLocation,
+          location: locationInfo.short, // For table display
+          full_address: locationInfo.full, // For detail view
           funding_info: {
             stage: company.latest_funding_stage,
             amount: company.latest_funding_amount,
@@ -303,11 +304,13 @@ class ApolloService {
         
       } catch (error) {
         console.error(`Failed to get contacts for ${company.name}:`, error)
+        const locationInfo = this.extractDualLocationFormats(company, searchCriteria.locations)
         companiesWithContacts.push({
           ...company,
           contacts: [],
           domain: company.primary_domain || 'unknown',
-          location: this.extractCompanyLocation(company, searchCriteria.locations)
+          location: locationInfo.short,
+          full_address: locationInfo.full
         })
       }
     }
@@ -365,9 +368,9 @@ class ApolloService {
     return result
   }
 
-  // ENHANCED: Multiple approaches to extract company location
-  private extractCompanyLocation(company: any, searchLocations?: string[]): string {
-    console.log(`Extracting location for ${company.name}:`, {
+  // NEW: Extract both short and full location formats
+  private extractDualLocationFormats(company: any, searchLocations?: string[]): { short: string, full: string } {
+    console.log(`Extracting dual location formats for ${company.name}:`, {
       headquarters_address: company.headquarters_address,
       location: company.location,
       city: company.city,
@@ -377,79 +380,92 @@ class ApolloService {
       address: company.address
     })
 
+    let city = ''
+    let state = ''
+    let country = ''
+    let fullAddress = ''
+
     // Method 1: headquarters_address object
     if (company.headquarters_address) {
       const addr = company.headquarters_address
-      const parts = [addr.city, addr.state, addr.country].filter(Boolean)
-      if (parts.length > 0) {
-        const location = parts.join(', ')
-        console.log(`Using headquarters_address: ${location}`)
-        return location
+      city = addr.city || ''
+      state = addr.state || ''
+      country = addr.country || ''
+      fullAddress = [addr.city, addr.state, addr.country].filter(Boolean).join(', ')
+      console.log(`Using headquarters_address - City: ${city}, Country: ${country}, Full: ${fullAddress}`)
+    }
+    // Method 2: Individual fields
+    else if (company.city || company.state || company.country) {
+      city = company.city || ''
+      state = company.state || ''
+      country = company.country || ''
+      fullAddress = [city, state, country].filter(Boolean).join(', ')
+      console.log(`Using individual fields - City: ${city}, Country: ${country}, Full: ${fullAddress}`)
+    }
+    // Method 3: Parse from formatted location or direct location
+    else if (company.formatted_location || company.location) {
+      const locationStr = company.formatted_location || company.location
+      fullAddress = locationStr
+      
+      // Try to extract city and country from full location string
+      const parts = locationStr.split(',').map((s: string) => s.trim())
+      if (parts.length >= 2) {
+        city = parts[0] // First part is usually city
+        country = parts[parts.length - 1] // Last part is usually country
       }
+      console.log(`Using formatted location - City: ${city}, Country: ${country}, Full: ${fullAddress}`)
     }
-    
-    // Method 2: Direct location field
-    if (company.location) {
-      console.log(`Using direct location field: ${company.location}`)
-      return company.location
-    }
-    
-    // Method 3: formatted_location field
-    if (company.formatted_location) {
-      console.log(`Using formatted_location: ${company.formatted_location}`)
-      return company.formatted_location
-    }
-    
-    // Method 4: Individual city/state/country fields
-    if (company.city || company.state || company.country) {
-      const parts = [company.city, company.state, company.country].filter(Boolean)
-      if (parts.length > 0) {
-        const location = parts.join(', ')
-        console.log(`Using individual fields: ${location}`)
-        return location
+    // Method 4: Address field
+    else if (company.address) {
+      fullAddress = company.address
+      // Basic parsing attempt for city/country from address
+      const parts = company.address.split(',').map((s: string) => s.trim())
+      if (parts.length >= 2) {
+        city = parts[0]
+        country = parts[parts.length - 1]
       }
+      console.log(`Using address field - City: ${city}, Country: ${country}, Full: ${fullAddress}`)
     }
-    
-    // Method 5: Parse from address field
-    if (company.address) {
-      console.log(`Using address field: ${company.address}`)
-      return company.address
-    }
-    
-    // Method 6: Extract from website domain (rough approximation)
-    if (company.website_url || company.primary_domain) {
+
+    // Fallback methods if we still don't have location
+    if (!city && !country && !fullAddress) {
+      // Method 5: Domain inference
       const domain = company.primary_domain || company.website_url
       if (domain) {
-        // Common patterns for location in domain names
         if (domain.includes('.uk') || domain.includes('co.uk')) {
-          console.log('Inferred from domain: United Kingdom')
-          return 'United Kingdom'
+          country = 'United Kingdom'
+          fullAddress = 'United Kingdom'
+        } else if (domain.includes('.de')) {
+          country = 'Germany'
+          fullAddress = 'Germany'
+        } else if (domain.includes('.fr')) {
+          country = 'France'
+          fullAddress = 'France'
+        } else if (domain.includes('.ca')) {
+          country = 'Canada'
+          fullAddress = 'Canada'
         }
-        if (domain.includes('.de')) {
-          console.log('Inferred from domain: Germany')
-          return 'Germany'
-        }
-        if (domain.includes('.fr')) {
-          console.log('Inferred from domain: France')
-          return 'France'
-        }
-        if (domain.includes('.ca')) {
-          console.log('Inferred from domain: Canada')
-          return 'Canada'
-        }
+        console.log(`Inferred from domain - Country: ${country}, Full: ${fullAddress}`)
+      }
+      
+      // Method 6: Search location fallback
+      if (!country && searchLocations && searchLocations.length > 0) {
+        country = searchLocations[0]
+        fullAddress = searchLocations[0]
+        console.log(`Using search location fallback - Country: ${country}, Full: ${fullAddress}`)
       }
     }
-    
-    // Method 7: Use search location as fallback (since we filtered by location)
-    if (searchLocations && searchLocations.length > 0) {
-      // Use the first search location as fallback since companies should match one of them
-      const fallbackLocation = searchLocations[0]
-      console.log(`Using search location fallback: ${fallbackLocation}`)
-      return fallbackLocation
+
+    // Create short format (City, Country) and full format
+    const shortLocation = [city, country].filter(Boolean).join(', ') || fullAddress || 'Unknown'
+    const fullLocation = fullAddress || [city, state, country].filter(Boolean).join(', ') || 'Unknown'
+
+    console.log(`Final formats - Short: "${shortLocation}", Full: "${fullLocation}"`)
+
+    return {
+      short: shortLocation,
+      full: fullLocation
     }
-    
-    console.log('No location found, using Unknown')
-    return 'Unknown'
   }
 
   private calculateEnhancedAIScore(company: any, searchCriteria: any): number {
