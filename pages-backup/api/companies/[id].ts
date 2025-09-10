@@ -1,0 +1,92 @@
+import { NextApiRequest, NextApiResponse } from 'next'
+import { supabaseAdmin } from '../../../lib/supabase'
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const { id } = req.query
+
+  switch (req.method) {
+    case 'GET':
+      return getCompany(req, res, id as string)
+    case 'PUT':
+      return updateCompany(req, res, id as string)
+    case 'DELETE':
+      return deleteCompany(req, res, id as string)
+    default:
+      res.setHeader('Allow', ['GET', 'PUT', 'DELETE'])
+      res.status(405).end(`Method ${req.method} Not Allowed`)
+  }
+}
+
+async function getCompany(req: NextApiRequest, res: NextApiResponse, id: string) {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('companies')
+      .select(`
+        *,
+        contacts (
+          id,
+          first_name,
+          last_name,
+          email,
+          title,
+          role_category,
+          contact_status
+        )
+      `)
+      .eq('id', id)
+      .single()
+
+    if (error) throw error
+
+    res.status(200).json(data)
+  } catch (error) {
+    console.error('Get Company Error:', error)
+    res.status(500).json({ error: 'Failed to fetch company' })
+  }
+}
+
+async function updateCompany(req: NextApiRequest, res: NextApiResponse, id: string) {
+  try {
+    const updateData = req.body
+
+    const { data, error } = await supabaseAdmin
+      .from('companies')
+      .update({
+        ...updateData,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    res.status(200).json(data)
+  } catch (error) {
+    console.error('Update Company Error:', error)
+    res.status(500).json({ error: 'Failed to update company' })
+  }
+}
+
+async function deleteCompany(req: NextApiRequest, res: NextApiResponse, id: string) {
+  try {
+    // First delete all associated contacts
+    await supabaseAdmin
+      .from('contacts')
+      .delete()
+      .eq('company_id', id)
+
+    // Then delete the company
+    const { error } = await supabaseAdmin
+      .from('companies')
+      .delete()
+      .eq('id', id)
+
+    if (error) throw error
+
+    res.status(204).end()
+  } catch (error) {
+    console.error('Delete Company Error:', error)
+    res.status(500).json({ error: 'Failed to delete company' })
+  }
+}

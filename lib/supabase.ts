@@ -1,0 +1,100 @@
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+// Check if Supabase is properly configured
+export function isSupabaseConfigured(): boolean {
+  return !!(supabaseUrl && supabaseAnonKey && 
+    supabaseUrl !== 'undefined' && 
+    supabaseAnonKey !== 'undefined' &&
+    supabaseUrl.startsWith('http'))
+}
+
+// Client-side Supabase client
+export const supabase = isSupabaseConfigured() 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null
+
+// Service role client for server-side operations
+export function createServiceRoleClient() {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  
+  if (!serviceRoleKey || !supabaseUrl || !isSupabaseConfigured()) {
+    return null
+  }
+  
+  return createClient(supabaseUrl, serviceRoleKey)
+}
+
+// Admin client for API routes - can be null if not configured
+export const supabaseAdmin = createServiceRoleClient()
+
+// Helper function to ensure supabaseAdmin is available
+export function requireSupabaseAdmin() {
+  if (!supabaseAdmin) {
+    throw new Error('Supabase admin client is not configured. Please check your environment variables.')
+  }
+  return supabaseAdmin
+}
+
+// Type definitions based on your existing schema
+export interface Company {
+  id: string
+  name: string
+  website?: string
+  industry?: string
+  funding_stage?: 'Series A' | 'Series B' | 'Series C'
+  location?: string
+  description?: string
+  total_funding?: number
+  last_funding_date?: string
+  employee_count?: number
+  crunchbase_url?: string
+  linkedin_url?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Contact {
+  id: string
+  company_id?: string
+  first_name: string
+  last_name: string
+  email?: string
+  phone?: string
+  title?: string
+  role_category?: 'VC' | 'Founder' | 'Board Member' | 'Executive'
+  linkedin_url?: string
+  address?: string
+  bio?: string
+  contact_status?: 'not_contacted' | 'contacted' | 'responded' | 'interested' | 'not_interested'
+  last_contacted_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface EmailCampaign {
+  id: string
+  name: string
+  subject: string
+  template: string
+  target_role_category?: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface EmailLog {
+  id: string
+  contact_id?: string
+  campaign_id?: string
+  subject: string
+  content: string
+  sent_at: string
+  opened_at?: string
+  clicked_at?: string
+  replied_at?: string
+  bounced: boolean
+  status: 'sent' | 'delivered' | 'opened' | 'clicked' | 'replied' | 'bounced'
+}

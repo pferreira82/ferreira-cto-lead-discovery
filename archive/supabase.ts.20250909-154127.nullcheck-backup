@@ -1,0 +1,193 @@
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+// For server-side operations requiring elevated permissions
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+
+export type Database = {
+  public: {
+    Tables: {
+      companies: {
+        Row: {
+          id: string
+          name: string
+          website: string | null
+          industry: string | null
+          funding_stage: 'Series A' | 'Series B' | 'Series C' | null
+          location: string | null
+          description: string | null
+          total_funding: number | null
+          last_funding_date: string | null
+          employee_count: number | null
+          crunchbase_url: string | null
+          linkedin_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          website?: string | null
+          industry?: string | null
+          funding_stage?: 'Series A' | 'Series B' | 'Series C' | null
+          location?: string | null
+          description?: string | null
+          total_funding?: number | null
+          last_funding_date?: string | null
+          employee_count?: number | null
+          crunchbase_url?: string | null
+          linkedin_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          website?: string | null
+          industry?: string | null
+          funding_stage?: 'Series A' | 'Series B' | 'Series C' | null
+          location?: string | null
+          description?: string | null
+          total_funding?: number | null
+          last_funding_date?: string | null
+          employee_count?: number | null
+          crunchbase_url?: string | null
+          linkedin_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      contacts: {
+        Row: {
+          id: string
+          company_id: string | null
+          first_name: string
+          last_name: string
+          email: string | null
+          phone: string | null
+          title: string | null
+          role_category: 'VC' | 'Founder' | 'Board Member' | 'Executive' | null
+          linkedin_url: string | null
+          address: string | null
+          bio: string | null
+          contact_status: 'not_contacted' | 'contacted' | 'responded' | 'interested' | 'not_interested'
+          last_contacted_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id?: string | null
+          first_name: string
+          last_name: string
+          email?: string | null
+          phone?: string | null
+          title?: string | null
+          role_category?: 'VC' | 'Founder' | 'Board Member' | 'Executive' | null
+          linkedin_url?: string | null
+          address?: string | null
+          bio?: string | null
+          contact_status?: 'not_contacted' | 'contacted' | 'responded' | 'interested' | 'not_interested'
+          last_contacted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string | null
+          first_name?: string
+          last_name?: string
+          email?: string | null
+          phone?: string | null
+          title?: string | null
+          role_category?: 'VC' | 'Founder' | 'Board Member' | 'Executive' | null
+          linkedin_url?: string | null
+          address?: string | null
+          bio?: string | null
+          contact_status?: 'not_contacted' | 'contacted' | 'responded' | 'interested' | 'not_interested'
+          last_contacted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      email_campaigns: {
+        Row: {
+          id: string
+          name: string
+          subject: string
+          template: string
+          target_role_category: string | null
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          subject: string
+          template: string
+          target_role_category?: string | null
+          active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          subject?: string
+          template?: string
+          target_role_category?: string | null
+          active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      email_logs: {
+        Row: {
+          id: string
+          contact_id: string | null
+          campaign_id: string | null
+          subject: string
+          content: string
+          sent_at: string
+          opened_at: string | null
+          clicked_at: string | null
+          replied_at: string | null
+          bounced: boolean
+          status: 'sent' | 'delivered' | 'opened' | 'clicked' | 'replied' | 'bounced'
+        }
+        Insert: {
+          id?: string
+          contact_id?: string | null
+          campaign_id?: string | null
+          subject: string
+          content: string
+          sent_at?: string
+          opened_at?: string | null
+          clicked_at?: string | null
+          replied_at?: string | null
+          bounced?: boolean
+          status?: 'sent' | 'delivered' | 'opened' | 'clicked' | 'replied' | 'bounced'
+        }
+        Update: {
+          id?: string
+          contact_id?: string | null
+          campaign_id?: string | null
+          subject?: string
+          content?: string
+          sent_at?: string
+          opened_at?: string | null
+          clicked_at?: string | null
+          replied_at?: string | null
+          bounced?: boolean
+          status?: 'sent' | 'delivered' | 'opened' | 'clicked' | 'replied' | 'bounced'
+        }
+      }
+    }
+  }
+}
