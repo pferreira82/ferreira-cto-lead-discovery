@@ -31,30 +31,27 @@ export async function GET(request: NextRequest) {
       })
     }
     
-    // Test database connection
+    // Test database connection with proper Supabase syntax
     console.log('Testing database connection...')
-    const { data: testData, error: testError } = await supabaseAdmin
-      .from('companies')
-      .select('count(*)', { count: 'exact' })
-      .limit(1)
     
-    if (testError) {
-      console.error('Database test error:', testError)
+    // First, try to get company count using proper syntax
+    const { count: companyCount, error: countError } = await supabaseAdmin
+      .from('companies')
+      .select('*', { count: 'exact', head: true })
+    
+    if (countError) {
+      console.error('Database count error:', countError)
       return NextResponse.json({
         success: false,
         error: 'Database connection failed',
         details: {
           ...envCheck,
-          databaseError: testError.message,
-          errorCode: testError.code
+          databaseError: countError.message,
+          errorCode: countError.code,
+          hint: countError.hint
         }
       })
     }
-    
-    // Get actual company count
-    const { count: companyCount, error: countError } = await supabaseAdmin
-      .from('companies')
-      .select('*', { count: 'exact', head: true })
     
     // Get some sample companies
     const { data: sampleCompanies, error: sampleError } = await supabaseAdmin
@@ -62,17 +59,24 @@ export async function GET(request: NextRequest) {
       .select('id, name, industry, funding_stage, location')
       .limit(5)
     
+    // Test contacts table too
+    const { count: contactCount, error: contactCountError } = await supabaseAdmin
+      .from('contacts')
+      .select('*', { count: 'exact', head: true })
+    
     return NextResponse.json({
       success: true,
       message: 'Database connection successful',
       details: {
         ...envCheck,
         companyCount: companyCount || 0,
+        contactCount: contactCount || 0,
         hasCompanies: (companyCount || 0) > 0,
+        hasContacts: (contactCount || 0) > 0,
         sampleCompanies: sampleCompanies || [],
         errors: {
-          countError: countError?.message,
-          sampleError: sampleError?.message
+          sampleError: sampleError?.message,
+          contactCountError: contactCountError?.message
         }
       }
     })

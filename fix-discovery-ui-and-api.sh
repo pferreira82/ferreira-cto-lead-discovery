@@ -1,3 +1,87 @@
+#!/bin/bash
+
+echo "Fixing Discovery UI and Apollo API Route"
+echo "======================================"
+
+# First, create the proper Apollo test API route
+echo "Creating Apollo test API route..."
+mkdir -p app/api/test/apollo
+cat > app/api/test/apollo/route.ts << 'EOF'
+import { NextRequest, NextResponse } from 'next/server'
+
+export async function GET(request: NextRequest) {
+  try {
+    console.log('Testing Apollo API connection...')
+    
+    if (!process.env.APOLLO_API_KEY) {
+      return NextResponse.json({
+        success: false,
+        error: 'Apollo API key not configured',
+        message: 'Set APOLLO_API_KEY in your environment variables'
+      })
+    }
+
+    // Test with a simple search for biotech companies using correct API format
+    const testParams = {
+      api_key: process.env.APOLLO_API_KEY,
+      q_organization_keyword_tags: ['biotech', 'biotechnology'],
+      organization_locations: ['United States'],
+      per_page: 5,
+      page: 1
+    }
+
+    console.log('Testing Apollo with params:', { ...testParams, api_key: 'HIDDEN' })
+    
+    const response = await fetch('https://api.apollo.io/api/v1/mixed_companies/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        'accept': 'application/json'
+      },
+      body: JSON.stringify(testParams)
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Apollo API error: ${response.status} - ${errorText}`)
+    }
+
+    const data = await response.json()
+    
+    return NextResponse.json({
+      success: true,
+      message: 'Apollo API connection successful',
+      results: {
+        companiesFound: data.accounts?.length || 0,
+        totalAvailable: data.pagination?.total_entries || 0,
+        sampleCompanies: data.accounts?.slice(0, 3).map((company: any) => ({
+          name: company.name,
+          industry: company.industry,
+          location: company.headquarters_address,
+          website: company.website_url,
+          employees: company.estimated_num_employees,
+          funding: company.total_funding
+        }))
+      },
+      pagination: data.pagination
+    })
+
+  } catch (error) {
+    console.error('Apollo API test failed:', error)
+    return NextResponse.json({
+      success: false,
+      error: 'Apollo API test failed',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      details: error instanceof Error ? error.stack : undefined
+    }, { status: 500 })
+  }
+}
+EOF
+
+# Now replace the debug discovery page with the proper lead discovery interface
+echo "Replacing debug discovery page with proper lead discovery interface..."
+cat > app/discovery/page.tsx << 'EOF'
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -678,3 +762,28 @@ export default function LeadDiscoveryPage() {
     </div>
   )
 }
+EOF
+
+echo ""
+echo "Discovery UI and API Routes Fixed!"
+echo "================================="
+echo ""
+echo "What was fixed:"
+echo "1. ✅ Created proper Apollo test API route at /api/test/apollo"
+echo "2. ✅ Replaced debug discovery page with full lead discovery interface"
+echo "3. ✅ Added proper search configuration UI"
+echo "4. ✅ Added results table with company details"
+echo "5. ✅ Added lead detail dialog"
+echo "6. ✅ Added save functionality"
+echo ""
+echo "Now test:"
+echo "1. Restart your server: npm run dev"
+echo "2. Visit /api/test/apollo to test Apollo API"
+echo "3. Visit /discovery for the proper lead discovery interface"
+echo ""
+echo "Your discovery page should now show:"
+echo "• Search parameter configuration"  
+echo "• Start Discovery button"
+echo "• Results table with company details"
+echo "• Proper lead management interface"
+echo ""
