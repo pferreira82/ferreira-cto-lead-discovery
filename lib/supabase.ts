@@ -16,29 +16,21 @@ export const supabase = isSupabaseConfigured()
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null
 
-// Service role client for server-side operations
+// For server-side operations
 export function createServiceRoleClient() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   
-  if (!serviceRoleKey || !supabaseUrl || !isSupabaseConfigured()) {
+  if (!serviceRoleKey || !supabaseUrl) {
     return null
   }
   
   return createClient(supabaseUrl, serviceRoleKey)
 }
 
-// Admin client for API routes - can be null if not configured
+// Server-side client for API routes
 export const supabaseAdmin = createServiceRoleClient()
 
-// Helper function to ensure supabaseAdmin is available
-export function requireSupabaseAdmin() {
-  if (!supabaseAdmin) {
-    throw new Error('Supabase admin client is not configured. Please check your environment variables.')
-  }
-  return supabaseAdmin
-}
-
-// Type definitions based on your existing schema
+// Database Types based on your existing schema
 export interface Company {
   id: string
   name: string
@@ -52,6 +44,8 @@ export interface Company {
   employee_count?: number
   crunchbase_url?: string
   linkedin_url?: string
+  ai_score?: number
+  discovered_at?: string
   created_at: string
   updated_at: string
 }
@@ -70,31 +64,21 @@ export interface Contact {
   bio?: string
   contact_status?: 'not_contacted' | 'contacted' | 'responded' | 'interested' | 'not_interested'
   last_contacted_at?: string
+  discovered_at?: string
   created_at: string
   updated_at: string
 }
 
-export interface EmailCampaign {
+export interface SavedItem {
   id: string
-  name: string
-  subject: string
-  template: string
-  target_role_category?: string
-  active: boolean
-  created_at: string
-  updated_at: string
-}
-
-export interface EmailLog {
-  id: string
+  user_id: string
+  item_type: 'company' | 'contact' | 'vc'
+  company_id?: string
   contact_id?: string
-  campaign_id?: string
-  subject: string
-  content: string
-  sent_at: string
-  opened_at?: string
-  clicked_at?: string
-  replied_at?: string
-  bounced: boolean
-  status: 'sent' | 'delivered' | 'opened' | 'clicked' | 'replied' | 'bounced'
+  vc_data?: any
+  ai_score?: number
+  discovery_source?: string
+  search_criteria?: any
+  created_at: string
+  updated_at: string
 }
