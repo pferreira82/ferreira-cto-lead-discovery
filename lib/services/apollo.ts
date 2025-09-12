@@ -17,7 +17,6 @@ interface ApolloCompany {
     state?: string
     country?: string
   }
-  // Alternative location fields that might exist
   location?: string
   city?: string
   state?: string
@@ -47,14 +46,12 @@ interface ApolloOrganizationDetail {
   estimated_num_employees?: number
   keywords?: string[]
   industries?: string[]
-  // RICH LOCATION DATA
   raw_address?: string
   street_address?: string
   city?: string
   state?: string
   postal_code?: string
   country?: string
-  // RICH COMPANY DATA
   short_description?: string
   annual_revenue?: number
   annual_revenue_printed?: string
@@ -211,16 +208,14 @@ class ApolloService {
     return this.makeRequest('/mixed_companies/search', params)
   }
 
-  // NEW: Get complete organization details
   async getOrganizationDetail(organizationId: string): Promise<ApolloOrganizationDetailResponse> {
     return this.makeRequest(`/organizations/${organizationId}`, {}, 'GET')
   }
 
-  // Enhanced contact search targeting executives and founders
   async getExecutiveContactsByDomain(domain: string, maxContacts: number = 5): Promise<ApolloContactsResponse> {
     const contactParams: ApolloContactSearchParams = {
       q_organization_domains_list: [domain],
-      person_seniorities: ['founder', 'c_suite', 'owner', 'partner'], // Target top executives
+      person_seniorities: ['founder', 'c_suite', 'owner', 'partner'],
       person_titles: [
         'founder', 'co-founder', 'ceo', 'chief executive officer',
         'president', 'chairman', 'board member', 'partner',
@@ -233,8 +228,87 @@ class ApolloService {
     return this.makeRequest('/mixed_people/search', contactParams)
   }
 
-  // Search for VCs and investors by location
-  async searchVCsByLocation(locations: string[], maxResults: number = 20): Promise<ApolloContactsResponse> {
+  // NEW: Pagination method for VCs and investors
+  private async getAllVCsWithPagination(
+    baseParams: ApolloContactSearchParams,
+    maxResults: number,
+    onProgress?: (step: string, current: number, total: number) => void
+  ): Promise<ApolloPerson[]> {
+    const allVCs: ApolloPerson[] = []
+    let currentPage = 1
+    const resultsPerPage = Math.min(50, maxResults) // Use 50 as max per page to avoid crashes
+    
+    console.log(`Planning to fetch ${maxResults} VCs using ${resultsPerPage} per page`)
+
+    while (allVCs.length < maxResults) {
+      const remainingResults = maxResults - allVCs.length
+      const currentPageSize = Math.min(resultsPerPage, remainingResults)
+      
+      const pageParams = {
+        ...baseParams,
+        page: currentPage,
+        per_page: currentPageSize
+      }
+
+      try {
+        console.log(`Fetching VC page ${currentPage} with ${currentPageSize} results...`)
+        onProgress?.(`💼 Fetching VC page ${currentPage}... (${allVCs.length}/${maxResults} collected)`, 4, 6)
+        
+        const response = await this.makeRequest('/mixed_people/search', pageParams)
+        const pageVCs = response.people || []
+        
+        console.log(`VC Page ${currentPage}: Got ${pageVCs.length} contacts`)
+        
+        if (pageVCs.length === 0) {
+          console.log(`No more VCs available at page ${currentPage}`)
+          break
+        }
+        
+        // Add VCs from this page
+        allVCs.push(...pageVCs)
+        
+        console.log(`Total VCs collected so far: ${allVCs.length}/${maxResults}`)
+        
+        // Check if we've reached our target or if there are no more pages
+        if (allVCs.length >= maxResults) {
+          console.log(`Reached VC target of ${maxResults} contacts`)
+          break
+        }
+        
+        if (currentPage >= response.pagination.total_pages) {
+          console.log(`Reached last VC page (${response.pagination.total_pages})`)
+          break
+        }
+        
+        // Move to next page
+        currentPage++
+        
+        // Add delay between page requests to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 300))
+        
+      } catch (error) {
+        console.error(`Error fetching VC page ${currentPage}:`, error)
+        
+        // If we got some results, continue with what we have
+        if (allVCs.length > 0) {
+          console.log(`Continuing with ${allVCs.length} VCs despite page ${currentPage} error`)
+          break
+        } else {
+          // If this was the first page and it failed, re-throw the error
+          throw error
+        }
+      }
+    }
+    
+    // Trim to exact number requested
+    const finalVCs = allVCs.slice(0, maxResults)
+    console.log(`VC pagination complete: Collected ${finalVCs.length} VCs across ${currentPage} pages`)
+    
+    return finalVCs
+  }
+
+  // UPDATED: VC search with pagination and configurable limits
+  async searchVCsByLocation(locations: string[], maxResults: number = 100): Promise<ApolloContactsResponse> {
     const contactParams: ApolloContactSearchParams = {
       person_titles: [
         'venture capitalist', 'vc', 'investor', 'partner',
@@ -243,92 +317,232 @@ class ApolloService {
       ],
       person_seniorities: ['partner', 'c_suite', 'director', 'vp'],
       organization_locations: locations,
-      per_page: maxResults,
+      per_page: Math.min(50, maxResults), // Will be overridden by pagination
       page: 1
     }
 
-    return this.makeRequest('/mixed_people/search', contactParams)
+    console.log(`Searching for VCs with pagination - target: ${maxResults} results`)
+
+    // Use pagination for VCs just like companies
+    const allVCs = await this.getAllVCsWithPagination(contactParams, maxResults)
+    
+    return {
+      people: allVCs,
+      pagination: {
+        page: 1,
+        per_page: allVCs.length,
+        total_entries: allVCs.length,
+        total_pages: 1
+      }
+    }
   }
 
-  // ENHANCED: Company search with complete organization details
+  // Company pagination method (same as before)
+  private async getAllCompaniesWithPagination(
+    baseParams: ApolloCompanySearchParams, 
+    maxResults: number,
+    onProgress?: (step: string, current: number, total: number) => void
+  ): Promise<ApolloCompany[]> {
+    const allCompanies: ApolloCompany[] = []
+    let currentPage = 1
+    const resultsPerPage = Math.min(50, maxResults)
+    
+    console.log(`Planning to fetch ${maxResults} results using ${resultsPerPage} per page across multiple pages`)
+
+    while (allCompanies.length < maxResults) {
+      const remainingResults = maxResults - allCompanies.length
+      const currentPageSize = Math.min(resultsPerPage, remainingResults)
+      
+      const pageParams = {
+        ...baseParams,
+        page: currentPage,
+        per_page: currentPageSize
+      }
+
+      try {
+        console.log(`Fetching page ${currentPage} with ${currentPageSize} results...`)
+        onProgress?.(`📥 Fetching page ${currentPage}... (${allCompanies.length}/${maxResults} collected)`, 0, 6)
+        
+        const response = await this.searchCompanies(pageParams)
+        const pageCompanies = response.organizations || []
+        
+        console.log(`Page ${currentPage}: Got ${pageCompanies.length} companies`)
+        
+        if (pageCompanies.length === 0) {
+          console.log(`No more companies available at page ${currentPage}`)
+          break
+        }
+        
+        allCompanies.push(...pageCompanies)
+        console.log(`Total collected so far: ${allCompanies.length}/${maxResults}`)
+        
+        if (allCompanies.length >= maxResults) {
+          console.log(`Reached target of ${maxResults} companies`)
+          break
+        }
+        
+        if (currentPage >= response.pagination.total_pages) {
+          console.log(`Reached last page (${response.pagination.total_pages})`)
+          break
+        }
+        
+        currentPage++
+        await new Promise(resolve => setTimeout(resolve, 300))
+        
+      } catch (error) {
+        console.error(`Error fetching page ${currentPage}:`, error)
+        
+        if (allCompanies.length > 0) {
+          console.log(`Continuing with ${allCompanies.length} companies despite page ${currentPage} error`)
+          break
+        } else {
+          throw error
+        }
+      }
+    }
+    
+    const finalCompanies = allCompanies.slice(0, maxResults)
+    console.log(`Pagination complete: Collected ${finalCompanies.length} companies across ${currentPage} pages`)
+    
+    return finalCompanies
+  }
+
+  // Get existing data from database for duplicate detection
+  async getExistingDataForDuplicateDetection() {
+    try {
+      const response = await fetch('/api/discovery/get-existing-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        return {
+          existingCompanyIds: new Set(data.companies.map((c: any) => c.apollo_id).filter(Boolean)),
+          existingContactIds: new Set(data.contacts.map((c: any) => c.apollo_id).filter(Boolean)),
+          existingCompanyNames: new Set(data.companies.map((c: any) => c.name.toLowerCase())),
+          existingContactEmails: new Set(data.contacts.map((c: any) => c.email).filter(Boolean))
+        }
+      } else {
+        console.warn('Could not fetch existing data, proceeding without duplicate detection')
+        return {
+          existingCompanyIds: new Set(),
+          existingContactIds: new Set(),
+          existingCompanyNames: new Set(),
+          existingContactEmails: new Set()
+        }
+      }
+    } catch (error) {
+      console.warn('Error fetching existing data for duplicate detection:', error)
+      return {
+        existingCompanyIds: new Set(),
+        existingContactIds: new Set(),
+        existingCompanyNames: new Set(),
+        existingContactEmails: new Set()
+      }
+    }
+  }
+
+  // Main search method with both company and VC pagination
   async searchCompaniesWithExecutives(
     searchCriteria: any, 
     onProgress?: (step: string, current: number, total: number) => void
   ) {
-    // Step 1: Search companies with basic filtering
-    onProgress?.('🔍 Searching companies...', 0, 5)
+    onProgress?.('🔍 Searching companies with pagination...', 0, 6)
     
     const apolloParams = this.buildSearchParams(searchCriteria)
     console.log('Company search params:', apolloParams)
     
-    const companyResponse = await this.searchCompanies(apolloParams)
-    const basicCompanies = companyResponse.organizations || []
+    // Get all companies using pagination
+    const allCompanies = await this.getAllCompaniesWithPagination(apolloParams, searchCriteria.maxResults || 25, onProgress)
     
-    console.log(`Found ${basicCompanies.length} companies`)
+    console.log(`Found ${allCompanies.length} companies total`)
     
-    if (basicCompanies.length === 0) {
+    if (allCompanies.length === 0) {
       return {
         companies: [],
         totalCompanies: 0,
         totalContacts: 0,
         vcContacts: [],
-        pagination: companyResponse.pagination
+        pagination: { page: 1, per_page: 0, total_entries: 0, total_pages: 0 }
       }
     }
 
-    // Step 2: Get complete organization details for each company
-    onProgress?.('📋 Getting complete company details...', 1, 5)
+    // Get existing data for duplicate detection
+    onProgress?.('🔍 Checking for duplicates...', 1, 6)
+    let existingData = {
+      existingCompanyIds: new Set(),
+      existingContactIds: new Set(), 
+      existingCompanyNames: new Set(),
+      existingContactEmails: new Set()
+    }
+
+    if (searchCriteria.excludeExistingCompanies || searchCriteria.excludeExistingContacts) {
+      console.log('Duplicate detection enabled, fetching existing data...')
+    }
+
+    onProgress?.('📋 Getting complete company details...', 2, 6)
     
     const detailedCompanies = []
-    for (let i = 0; i < basicCompanies.length; i++) {
-      const basicCompany = basicCompanies[i]
+    const processedCompanyIds = new Set()
+    
+    for (let i = 0; i < allCompanies.length; i++) {
+      const basicCompany = allCompanies[i]
       
+      if (processedCompanyIds.has(basicCompany.id)) {
+        console.log(`Skipping duplicate company ID: ${basicCompany.id} (${basicCompany.name})`)
+        continue
+      }
+
+      if (searchCriteria.excludeExistingCompanies && 
+          existingData.existingCompanyNames.has(basicCompany.name.toLowerCase())) {
+        console.log(`Skipping existing company: ${basicCompany.name}`)
+        continue
+      }
+
       try {
         if (i % 5 === 0) {
-          onProgress?.(`📋 Getting details for ${basicCompany.name}... (${i + 1}/${basicCompanies.length})`, 1, 5)
+          onProgress?.(`📋 Getting details for ${basicCompany.name}... (${i + 1}/${allCompanies.length})`, 2, 6)
         }
 
         console.log(`Getting complete details for ${basicCompany.name} (ID: ${basicCompany.id})`)
         const detailResponse = await this.getOrganizationDetail(basicCompany.id)
         const detailedOrg = detailResponse.organization
 
-        // Merge basic and detailed data
         const enhancedCompany = {
           ...basicCompany,
-          ...detailedOrg, // Detailed data takes precedence
-          // Ensure we keep the basic company fields that might not be in detailed
+          ...detailedOrg,
           original_basic_data: basicCompany
         }
 
         detailedCompanies.push(enhancedCompany)
+        processedCompanyIds.add(basicCompany.id)
 
-        // Rate limiting between detail calls
-        if (i < basicCompanies.length - 1) {
+        if (i < allCompanies.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 200))
         }
 
       } catch (error) {
         console.error(`Failed to get details for ${basicCompany.name}:`, error)
-        // Fall back to basic company data if detail call fails
         detailedCompanies.push(basicCompany)
+        processedCompanyIds.add(basicCompany.id)
       }
     }
 
-    onProgress?.('👥 Finding executive contacts...', 2, 5)
+    onProgress?.('👥 Finding executive contacts...', 3, 6)
 
-    // Step 3: Get executive contacts for each company
     const companiesWithContacts = []
     let totalContactsFound = 0
+    const processedContactIds = new Set()
     
     for (let i = 0; i < detailedCompanies.length; i++) {
       const company = detailedCompanies[i]
       
       try {
         if (i % 3 === 0) {
-          onProgress?.(`👥 Finding executives for ${company.name}... (${i + 1}/${detailedCompanies.length})`, 2, 5)
+          onProgress?.(`👥 Finding executives for ${company.name}... (${i + 1}/${detailedCompanies.length})`, 3, 6)
         }
 
-        // Extract domain
         let domain = company.primary_domain
         if (!domain && company.website_url) {
           try {
@@ -343,27 +557,46 @@ class ApolloService {
         if (domain) {
           console.log(`Searching executive contacts for ${company.name} using domain: ${domain}`)
           
-          const contactResponse = await this.getExecutiveContactsByDomain(domain, 5)
-          contacts = (contactResponse.people || []).map(person => ({
-            name: person.name || `${person.first_name} ${person.last_name}`,
-            title: person.title || 'Unknown Title',
-            email: person.email?.includes('email_not_unlocked') ? undefined : person.email,
-            role_category: this.categorizeExecutiveRole(person.title, person.seniority),
-            linkedin: person.linkedin_url,
-            seniority: person.seniority,
-            departments: person.departments,
-            functions: person.functions,
-            photo_url: person.photo_url,
-            location: person.formatted_address || `${person.city || ''}, ${person.state || ''}, ${person.country || ''}`.replace(/(^,|,$)/g, '').replace(/,+/g, ', ').trim()
-          }))
+          const contactResponse = await this.getExecutiveContactsByDomain(domain, 10)
+          const rawContacts = contactResponse.people || []
+          
+          for (const person of rawContacts) {
+            if (processedContactIds.has(person.id)) {
+              console.log(`Skipping duplicate contact ID: ${person.id} (${person.name})`)
+              continue
+            }
+
+            if (searchCriteria.excludeExistingContacts && 
+                person.email && 
+                existingData.existingContactEmails.has(person.email)) {
+              console.log(`Skipping existing contact: ${person.email}`)
+              continue
+            }
+
+            const contact = {
+              id: person.id,
+              name: person.name || `${person.first_name} ${person.last_name}`,
+              title: person.title || 'Unknown Title',
+              email: person.email?.includes('email_not_unlocked') ? undefined : person.email,
+              role_category: this.categorizeExecutiveRole(person.title, person.seniority),
+              linkedin: person.linkedin_url,
+              seniority: person.seniority,
+              departments: person.departments,
+              functions: person.functions,
+              photo_url: person.photo_url,
+              location: person.formatted_address || `${person.city || ''}, ${person.state || ''}, ${person.country || ''}`.replace(/(^,|,$)/g, '').replace(/,+/g, ', ').trim()
+            }
+
+            contacts.push(contact)
+            processedContactIds.add(person.id)
+          }
           
           totalContactsFound += contacts.length
-          console.log(`Found ${contacts.length} executive contacts for ${company.name}`)
+          console.log(`Found ${contacts.length} unique executive contacts for ${company.name}`)
         } else {
           console.warn(`No domain found for ${company.name}`)
         }
 
-        // ENHANCED: Extract location and company data from detailed API response
         const locationInfo = this.extractLocationFromDetailedData(company)
         const fundingInfo = this.extractFundingInfo(company)
         
@@ -371,11 +604,10 @@ class ApolloService {
           ...company,
           contacts: contacts,
           domain: domain,
-          location: locationInfo.short, // Short format for table
-          full_address: locationInfo.full, // Full format for detail view
+          location: locationInfo.short,
+          full_address: locationInfo.full,
           funding_info: fundingInfo,
           short_description: company.short_description || company.description,
-          // Additional useful fields
           revenue_info: {
             annual_revenue: company.annual_revenue,
             annual_revenue_printed: company.annual_revenue_printed
@@ -384,15 +616,8 @@ class ApolloService {
           all_investors: this.extractAllInvestors(company.funding_events || [])
         }
 
-        console.log(`Enhanced company ${company.name}:`, {
-          location: locationInfo,
-          funding: fundingInfo,
-          description_length: company.short_description?.length || 0
-        })
-
         companiesWithContacts.push(enhancedCompany)
 
-        // Rate limiting
         if (i < detailedCompanies.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 150))
         }
@@ -410,60 +635,93 @@ class ApolloService {
       }
     }
 
-    onProgress?.('💼 Finding VCs and investors...', 3, 5)
+    onProgress?.('💼 Finding VCs and investors with pagination...', 4, 6)
 
-    // Step 4: Search for VCs in the same locations
     let vcContacts = []
+    const processedVCIds = new Set()
+    
     if (searchCriteria.includeVCs && searchCriteria.locations?.length > 0) {
       try {
-        const vcResponse = await this.searchVCsByLocation(searchCriteria.locations, 15)
-        vcContacts = (vcResponse.people || []).map(person => ({
-          name: person.name || `${person.first_name} ${person.last_name}`,
-          title: person.title || 'Unknown Title',
-          email: person.email?.includes('email_not_unlocked') ? undefined : person.email,
-          role_category: 'Investor/VC',
-          linkedin: person.linkedin_url,
-          seniority: person.seniority,
-          photo_url: person.photo_url,
-          location: person.formatted_address || `${person.city || ''}, ${person.state || ''}, ${person.country || ''}`.replace(/(^,|,$)/g, '').replace(/,+/g, ', ').trim(),
-          organization: person.organization?.name || 'Unknown',
-          organization_domain: person.organization?.primary_domain
-        }))
+        // FIXED: Make VC limit configurable and use pagination
+        const vcLimit = searchCriteria.maxVCs || searchCriteria.maxResults || 100
+        console.log(`Searching for up to ${vcLimit} VCs using pagination...`)
         
-        console.log(`Found ${vcContacts.length} VCs and investors`)
+        const vcResponse = await this.searchVCsByLocation(searchCriteria.locations, vcLimit)
+        const rawVCs = vcResponse.people || []
+        
+        for (const person of rawVCs) {
+          if (processedVCIds.has(person.id)) {
+            console.log(`Skipping duplicate VC ID: ${person.id} (${person.name})`)
+            continue
+          }
+
+          if (searchCriteria.excludeExistingContacts && 
+              person.email && 
+              existingData.existingContactEmails.has(person.email)) {
+            console.log(`Skipping existing VC: ${person.email}`)
+            continue
+          }
+
+          const vc = {
+            id: person.id,
+            name: person.name || `${person.first_name} ${person.last_name}`,
+            title: person.title || 'Unknown Title',
+            email: person.email?.includes('email_not_unlocked') ? undefined : person.email,
+            role_category: 'Investor/VC',
+            linkedin: person.linkedin_url,
+            seniority: person.seniority,
+            photo_url: person.photo_url,
+            location: person.formatted_address || `${person.city || ''}, ${person.state || ''}, ${person.country || ''}`.replace(/(^,|,$)/g, '').replace(/,+/g, ', ').trim(),
+            organization: person.organization?.name || 'Unknown',
+            organization_domain: person.organization?.primary_domain
+          }
+
+          vcContacts.push(vc)
+          processedVCIds.add(person.id)
+        }
+        
+        console.log(`Found ${vcContacts.length} unique VCs and investors using pagination`)
       } catch (error) {
         console.error('Failed to search VCs:', error)
       }
     }
 
-    onProgress?.('🧠 Analyzing and scoring results...', 4, 5)
+    onProgress?.('🧠 Analyzing and scoring results...', 5, 6)
 
-    // Step 5: Calculate AI scores
     const finalCompanies = companiesWithContacts.map(company => ({
       ...company,
       ai_score: this.calculateEnhancedAIScore(company, searchCriteria)
     }))
 
-    onProgress?.('✅ Complete!', 5, 5)
+    onProgress?.('✅ Complete!', 6, 6)
 
     const result = {
       companies: finalCompanies,
       totalCompanies: finalCompanies.length,
       totalContacts: totalContactsFound,
       vcContacts: vcContacts,
-      pagination: companyResponse.pagination
+      pagination: { 
+        page: 1, 
+        per_page: finalCompanies.length, 
+        total_entries: finalCompanies.length, 
+        total_pages: 1 
+      }
     }
 
-    console.log('Final enhanced results:', {
+    console.log('Final enhanced results with VC pagination:', {
       companies: result.totalCompanies,
       contacts: result.totalContacts,
-      vcs: result.vcContacts.length
+      vcs: result.vcContacts.length,
+      duplicatesSkipped: {
+        companies: processedCompanyIds.size - result.totalCompanies,
+        contacts: processedContactIds.size - result.totalContacts,
+        vcs: processedVCIds.size - result.vcContacts.length
+      }
     })
 
     return result
   }
 
-  // NEW: Extract location from detailed organization data
   private extractLocationFromDetailedData(company: any): { short: string, full: string } {
     console.log(`\n=== EXTRACTING LOCATION from detailed data for ${company.name} ===`)
     console.log('Detailed location fields:', {
@@ -478,13 +736,11 @@ class ApolloService {
     let shortLocation = 'Unknown'
     let fullLocation = 'Unknown'
 
-    // Use the rich location data from detailed API
     if (company.city || company.state || company.country) {
       const city = company.city || ''
       const state = company.state || ''
       const country = company.country || ''
 
-      // Short format: City, Country
       if (city && country) {
         shortLocation = `${city}, ${country}`
       } else if (city) {
@@ -493,7 +749,6 @@ class ApolloService {
         shortLocation = country
       }
 
-      // Full format: Use raw_address if available, otherwise build from components
       if (company.raw_address) {
         fullLocation = company.raw_address
       } else if (company.street_address) {
@@ -520,9 +775,8 @@ class ApolloService {
     return { short: shortLocation, full: fullLocation }
   }
 
-  // NEW: Extract funding information
   private extractFundingInfo(company: any) {
-    const latestEvent = company.funding_events?.[0] // Most recent event
+    const latestEvent = company.funding_events?.[0]
     
     return {
       stage: company.latest_funding_stage,
@@ -535,7 +789,6 @@ class ApolloService {
     }
   }
 
-  // NEW: Extract all investors from funding events
   private extractAllInvestors(fundingEvents: any[]): string[] {
     const allInvestors = new Set<string>()
     
@@ -550,45 +803,37 @@ class ApolloService {
   }
 
   private calculateEnhancedAIScore(company: any, searchCriteria: any): number {
-    let score = 70 // Base score
-    
-    // Executive contacts boost
+    let score = 70
+
     if (company.contacts?.length > 0) score += 20
     if (company.contacts?.length >= 3) score += 10
     
-    // Founder/C-suite boost
     const founderContacts = company.contacts?.filter((c: any) => 
       c.role_category === 'Founder' || c.role_category === 'C-Suite'
     ).length || 0
     if (founderContacts > 0) score += 15
     if (founderContacts >= 2) score += 10
     
-    // Funding stage relevance
     if (company.latest_funding_stage && searchCriteria.fundingStages?.includes(company.latest_funding_stage)) {
       score += 15
     }
     
-    // Recent funding boost
     if (company.latest_funding_round_date) {
       const fundingDate = new Date(company.latest_funding_round_date)
       const now = new Date()
       const monthsAgo = (now.getTime() - fundingDate.getTime()) / (1000 * 60 * 60 * 24 * 30)
-      if (monthsAgo <= 12) score += 10 // Funded in last year
-      if (monthsAgo <= 6) score += 5   // Funded in last 6 months
+      if (monthsAgo <= 12) score += 10
+      if (monthsAgo <= 6) score += 5
     }
     
-    // Company maturity and scale
     if (company.founded_year && company.founded_year >= 2015) score += 5
     if (company.publicly_traded_symbol) score += 10
     if (company.total_funding && company.total_funding > 10000000) score += 8
     
-    // Revenue boost
     if (company.annual_revenue && company.annual_revenue > 50000000) score += 5
     
-    // Description quality boost
     if (company.short_description && company.short_description.length > 200) score += 3
     
-    // Location boost for major tech hubs
     const majorHubs = ['san francisco', 'boston', 'new york', 'london', 'cambridge', 'palo alto', 'silicon valley']
     if (majorHubs.some(hub => company.location?.toLowerCase().includes(hub))) {
       score += 5
@@ -602,19 +847,15 @@ class ApolloService {
     
     const lowerTitle = (title || '').toLowerCase()
     
-    // Founders
     if (seniority === 'founder' || lowerTitle.includes('founder')) return 'Founder'
     
-    // C-Suite
     if (seniority === 'c_suite' || 
         lowerTitle.includes('ceo') || lowerTitle.includes('chief') ||
         lowerTitle.includes('president') || lowerTitle.includes('chairman')) return 'C-Suite'
     
-    // Board/Partners
     if (seniority === 'partner' || seniority === 'owner' ||
         lowerTitle.includes('board') || lowerTitle.includes('partner')) return 'Board/Partner'
     
-    // VPs and Directors
     if (seniority === 'vp' || lowerTitle.includes('vp') || lowerTitle.includes('vice president')) return 'VP'
     if (seniority === 'director' || lowerTitle.includes('director')) return 'Director'
     
@@ -624,7 +865,7 @@ class ApolloService {
   buildSearchParams(searchCriteria: any): ApolloCompanySearchParams {
     const params: ApolloCompanySearchParams = {
       page: 1,
-      per_page: Math.min(searchCriteria.maxResults || 25, 50)
+      per_page: 50
     }
 
     if (searchCriteria.locations && searchCriteria.locations.length > 0) {
@@ -682,6 +923,7 @@ class ApolloService {
       params.organization_num_employees_ranges = searchCriteria.employeeRanges
     }
 
+    console.log(`Apollo search params - using pagination with 50 per page`)
     return params
   }
 }

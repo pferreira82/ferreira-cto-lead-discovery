@@ -1,4 +1,4 @@
-// Enhanced Discovery Page with Working Results Table
+// Enhanced Discovery Page with Demo Mode Integration
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -40,6 +40,8 @@ import {
 import { toast } from 'react-hot-toast'
 import { useDemoMode } from '@/lib/demo-context'
 import { useDemoAPI } from '@/lib/hooks/use-demo-api'
+// NEW: Import the demo-aware Apollo service
+import { apolloService, getDemoStatus } from '@/lib/services/apollo-with-demo'
 
 interface DiscoveredLead {
     id: string
@@ -165,6 +167,9 @@ export default function EnhancedLeadDiscoveryPage() {
     const [showLeadDialog, setShowLeadDialog] = useState(false)
     const [showFilters, setShowFilters] = useState(false)
 
+    // NEW: Demo status tracking
+    const [demoStatus, setDemoStatus] = useState<any>(null)
+
     // Search parameters
     const [searchParams, setSearchParams] = useState({
         industries: ['Biotechnology', 'Pharmaceuticals'],
@@ -174,12 +179,20 @@ export default function EnhancedLeadDiscoveryPage() {
         includeVCs: true,
         excludeExistingCompanies: false,
         excludeExistingContacts: false,
-        maxResults: 10
+        maxResults: 10,
+        maxVCs: 50  // NEW: Added maxVCs parameter
     })
 
     // Existing data tracking
     const [existingDataStats, setExistingDataStats] = useState({ companies: 0, contacts: 0 })
     const [isCheckingExisting, setIsCheckingExisting] = useState(false)
+
+    // NEW: Initialize demo status
+    useEffect(() => {
+        if (isLoaded) {
+            setDemoStatus(getDemoStatus())
+        }
+    }, [isLoaded])
 
     // Load saved prospects on mount
     useEffect(() => {
@@ -216,19 +229,27 @@ export default function EnhancedLeadDiscoveryPage() {
     const checkExistingData = async () => {
         setIsCheckingExisting(true)
         try {
-            const response = await fetchWithDemo('/api/discovery/check-existing', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(searchParams)
-            })
-
-            if (response.ok) {
-                const data = await response.json()
-                setExistingDataStats({ 
-                    companies: data.companiesCount || 0, 
-                    contacts: data.contactsCount || 0 
+            // NEW: Use demo-aware approach for existing data check
+            if (isDemoMode) {
+                // In demo mode, return mock existing data stats
+                console.log('Demo mode: Simulating existing data check')
+                setExistingDataStats({ companies: 0, contacts: 0 })
+                toast.success('Demo mode: No existing data to avoid (using mock data)')
+            } else {
+                const response = await fetchWithDemo('/api/discovery/check-existing', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(searchParams)
                 })
-                toast.success(`Found ${data.companiesCount || 0} companies and ${data.contactsCount || 0} contacts in your database`)
+
+                if (response.ok) {
+                    const data = await response.json()
+                    setExistingDataStats({
+                        companies: data.companiesCount || 0,
+                        contacts: data.contactsCount || 0
+                    })
+                    toast.success(`Found ${data.companiesCount || 0} companies and ${data.contactsCount || 0} contacts in your database`)
+                }
             }
         } catch (error) {
             console.error('Error checking existing data:', error)
@@ -238,70 +259,75 @@ export default function EnhancedLeadDiscoveryPage() {
         }
     }
 
+    // NEW: Enhanced search using demo-aware Apollo service
     const handleSearch = async () => {
         setIsSearching(true)
         setSearchProgress(0)
-        setCurrentStep('Starting enhanced search...')
+        setCurrentStep(isDemoMode ? 'Starting demo search...' : 'Starting enhanced search...')
         setDiscoveredLeads([])
         setVcContacts([])
         setSelectedCompanies(new Set())
         setSelectedVCs(new Set())
 
         try {
-            // Simulate progress updates
-            const progressInterval = setInterval(() => {
-                setSearchProgress(prev => {
-                    if (prev < 90) return prev + 10
-                    return prev
-                })
-                setCurrentStep(prev => {
-                    const steps = [
-                        'Starting enhanced search...',
-                        'Finding companies...',
-                        'Getting company details...',
-                        'Finding executive contacts...',
-                        'Searching for VCs...',
-                        'Analyzing results...'
-                    ]
-                    const currentIndex = Math.floor(prev / 15)
-                    return steps[currentIndex] || 'Completing search...'
-                })
-            }, 2000)
-
-            const response = await fetchWithDemo('/api/discovery/search', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(searchParams)
-            })
-
-            clearInterval(progressInterval)
-            setSearchProgress(100)
-            setCurrentStep('Search complete!')
-
-            if (response.ok) {
-                const data = await response.json()
-                console.log('Search response:', data)
-                
-                setDiscoveredLeads(data.leads || [])
-                setVcContacts(data.vcContacts || [])
-                
-                const totalContacts = data.totalIndividualContacts || data.totalContacts || 0
-                setTotalIndividualContacts(totalContacts)
-
-                if (data.leads?.length > 0 || data.vcContacts?.length > 0) {
-                    setShowFilters(true)
+            // NEW: Use the demo-aware Apollo service directly
+            const result = await apolloService.searchCompaniesWithExecutives(
+                searchParams,
+                (step: string, current: number, total: number) => {
+                    setCurrentStep(step)
+                    setSearchProgress(Math.round((current / total) * 100))
                 }
+            )
 
-                toast.success(`Found ${data.leads?.length || 0} companies with ${totalContacts} total contacts!`)
+            console.log('Search result:', result)
+
+            // Transform the Apollo service response to match your UI format
+            const transformedCompanies = result.companies.map(company => ({
+                id: company.id,
+                company: company.name,
+                website: company.website_url,
+                industry: company.industry || 'Unknown',
+                fundingStage: company.latest_funding_stage,
+                description: company.description || company.short_description || '',
+                short_description: company.short_description,
+                location: company.location || 'Unknown',
+                full_address: company.full_address,
+                totalFunding: company.total_funding,
+                totalFundingPrinted: company.funding_info?.total_funding_printed,
+                employeeCount: company.estimated_num_employees,
+                foundedYear: company.founded_year,
+                ai_score: company.ai_score,
+                domain: company.domain,
+                logo_url: company.logo_url,
+                funding_info: company.funding_info,
+                revenue_info: company.revenue_info,
+                latest_investors: company.latest_investors,
+                all_investors: company.all_investors,
+                contacts: company.contacts || []
+            }))
+
+            setDiscoveredLeads(transformedCompanies)
+            setVcContacts(result.vcContacts || [])
+            setTotalIndividualContacts(result.totalContacts || 0)
+
+            if (transformedCompanies.length > 0 || result.vcContacts?.length > 0) {
+                setShowFilters(true)
+
+                const demoNote = isDemoMode ? ' (Demo data)' : ''
+                toast.success(`Found ${transformedCompanies.length} companies with ${result.totalContacts || 0} total contacts!${demoNote}`)
             } else {
-                const errorData = await response.json()
-                throw new Error(errorData.message || 'Search failed')
+                toast.error('No results found. Try adjusting your search criteria.')
             }
+
         } catch (error) {
             console.error('Search error:', error)
-            toast.error(error instanceof Error ? error.message : 'Search failed. Please try again.')
+            const errorMessage = error instanceof Error ? error.message : 'Search failed. Please try again.'
+            toast.error(isDemoMode ? `Demo error: ${errorMessage}` : errorMessage)
         } finally {
             setIsSearching(false)
+            setSearchProgress(100)
+            setCurrentStep(isDemoMode ? 'Demo search complete!' : 'Search complete!')
+
             setTimeout(() => {
                 setSearchProgress(0)
                 setCurrentStep('')
@@ -309,7 +335,7 @@ export default function EnhancedLeadDiscoveryPage() {
         }
     }
 
-    // Selection functions
+    // Selection functions (unchanged)
     const handleSelectCompany = (companyId: string) => {
         const newSelected = new Set(selectedCompanies)
         if (newSelected.has(companyId)) {
@@ -351,7 +377,7 @@ export default function EnhancedLeadDiscoveryPage() {
         const allCompaniesSelected = selectedCompanies.size === discoveredLeads.length
         const vcIds = vcContacts.map((vc, index) => vc.id || `vc_${index}_${vc.name.replace(/\s+/g, '_').toLowerCase()}`)
         const allVCsSelected = selectedVCs.size === vcIds.length
-        
+
         if (allCompaniesSelected && allVCsSelected) {
             setSelectedCompanies(new Set())
             setSelectedVCs(new Set())
@@ -364,17 +390,17 @@ export default function EnhancedLeadDiscoveryPage() {
     // Enhanced contact counting - count individual contacts, not just companies/VCs
     const getTotalSelectedContactCount = () => {
         let totalContacts = 0
-        
+
         // Count contacts from selected companies
         discoveredLeads.forEach(lead => {
             if (selectedCompanies.has(lead.id)) {
                 totalContacts += lead.contacts.length
             }
         })
-        
+
         // Count selected VCs (each VC is 1 contact)
         totalContacts += selectedVCs.size
-        
+
         return totalContacts
     }
 
@@ -382,7 +408,7 @@ export default function EnhancedLeadDiscoveryPage() {
         const companyCount = selectedCompanies.size
         const vcCount = selectedVCs.size
         const totalContactCount = getTotalSelectedContactCount()
-        
+
         return {
             companies: companyCount,
             vcs: vcCount,
@@ -426,7 +452,8 @@ export default function EnhancedLeadDiscoveryPage() {
 
             if (response.ok) {
                 const data = await response.json()
-                toast.success(`Saved ${selection.totalContacts} contacts from ${selection.companies} companies and ${selection.vcs} VCs`)
+                const demoNote = isDemoMode ? ' (Demo save)' : ''
+                toast.success(`Saved ${selection.totalContacts} contacts from ${selection.companies} companies and ${selection.vcs} VCs${demoNote}`)
                 setSelectedCompanies(new Set())
                 setSelectedVCs(new Set())
                 loadSavedProspects()
@@ -491,9 +518,15 @@ export default function EnhancedLeadDiscoveryPage() {
                     <p className="text-gray-600">Find and save companies, founders, and VCs with complete contact details</p>
                 </div>
                 <div className="flex items-center space-x-4">
-                    <Badge variant="outline" className={isDemoMode ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}>
+                    {/* NEW: Enhanced demo mode indicator */}
+                    <Badge variant="outline" className={isDemoMode ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}>
                         {isDemoMode ? 'Demo Mode' : 'Production Mode'}
                     </Badge>
+                    {demoStatus?.isDemoMode && (
+                        <Badge variant="secondary" className="text-xs">
+                            Mock Data
+                        </Badge>
+                    )}
                     <Button
                         variant="outline"
                         onClick={() => setShowSavedDialog(true)}
@@ -519,6 +552,12 @@ export default function EnhancedLeadDiscoveryPage() {
                     <CardTitle className="flex items-center">
                         <Filter className="mr-2 h-5 w-5" />
                         Enhanced Search Parameters
+                        {/* NEW: Demo mode hint */}
+                        {isDemoMode && (
+                            <Badge variant="outline" className="ml-2 text-xs bg-blue-50 text-blue-700">
+                                Will generate mock data
+                            </Badge>
+                        )}
                     </CardTitle>
                     <CardDescription>Configure your discovery criteria with duplicate detection</CardDescription>
                 </CardHeader>
@@ -628,10 +667,31 @@ export default function EnhancedLeadDiscoveryPage() {
                                             maxResults: parseInt(e.target.value) || 10
                                         }))}
                                         min="5"
-                                        max="20"
+                                        max={isDemoMode ? "25" : "200"}  // NEW: Demo mode limit
                                         className="w-24 mt-1"
                                     />
-                                    <p className="text-xs text-gray-500 mt-1">Lower for faster results</p>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        {isDemoMode ? 'Demo max: 25' : 'Lower for faster results'}
+                                    </p>
+                                </div>
+
+                                {/* NEW: Max VCs setting */}
+                                <div>
+                                    <label className="text-sm font-medium">Max VCs:</label>
+                                    <Input
+                                        type="number"
+                                        value={searchParams.maxVCs}
+                                        onChange={(e) => setSearchParams(prev => ({
+                                            ...prev,
+                                            maxVCs: parseInt(e.target.value) || 50
+                                        }))}
+                                        min="10"
+                                        max={isDemoMode ? "50" : "200"}  // NEW: Demo mode limit
+                                        className="w-24 mt-1"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        {isDemoMode ? 'Demo max: 50' : 'VCs and investors'}
+                                    </p>
                                 </div>
 
                                 <div className="flex items-center space-x-2">
@@ -650,8 +710,12 @@ export default function EnhancedLeadDiscoveryPage() {
                                         onCheckedChange={(checked) =>
                                             setSearchParams(prev => ({ ...prev, excludeExistingCompanies: checked as boolean }))
                                         }
+                                        disabled={isDemoMode}  // NEW: Disable in demo mode
                                     />
-                                    <span className="text-sm">Exclude existing companies</span>
+                                    <span className={`text-sm ${isDemoMode ? 'text-gray-400' : ''}`}>
+                                        Exclude existing companies
+                                        {isDemoMode && ' (Demo: N/A)'}
+                                    </span>
                                 </div>
 
                                 <div className="flex items-center space-x-2">
@@ -660,8 +724,12 @@ export default function EnhancedLeadDiscoveryPage() {
                                         onCheckedChange={(checked) =>
                                             setSearchParams(prev => ({ ...prev, excludeExistingContacts: checked as boolean }))
                                         }
+                                        disabled={isDemoMode}  // NEW: Disable in demo mode
                                     />
-                                    <span className="text-sm">Exclude existing contacts</span>
+                                    <span className={`text-sm ${isDemoMode ? 'text-gray-400' : ''}`}>
+                                        Exclude existing contacts
+                                        {isDemoMode && ' (Demo: N/A)'}
+                                    </span>
                                 </div>
 
                                 <div className="pt-2">
@@ -669,13 +737,16 @@ export default function EnhancedLeadDiscoveryPage() {
                                         variant="outline"
                                         size="sm"
                                         onClick={checkExistingData}
-                                        disabled={isCheckingExisting}
+                                        disabled={isCheckingExisting || isDemoMode}  // NEW: Disable in demo mode
                                         className="flex items-center space-x-2 w-full"
                                     >
                                         <Database className="w-4 h-4" />
-                                        <span>{isCheckingExisting ? 'Checking...' : 'Check Existing Data'}</span>
+                                        <span>
+                                            {isDemoMode ? 'Demo: No DB' :
+                                                isCheckingExisting ? 'Checking...' : 'Check Existing Data'}
+                                        </span>
                                     </Button>
-                                    {(existingDataStats.companies > 0 || existingDataStats.contacts > 0) && (
+                                    {(existingDataStats.companies > 0 || existingDataStats.contacts > 0) && !isDemoMode && (
                                         <p className="text-xs text-gray-600 mt-1">
                                             {existingDataStats.companies} companies, {existingDataStats.contacts} contacts in DB
                                         </p>
@@ -698,7 +769,10 @@ export default function EnhancedLeadDiscoveryPage() {
                             </div>
                             <Progress value={searchProgress} className="h-3" />
                             <p className="text-sm text-gray-600">
-                                Finding companies, executives, and VCs with complete contact information...
+                                {isDemoMode ?
+                                    'Generating realistic mock data for demonstration...' :
+                                    'Finding companies, executives, and VCs with complete contact information...'
+                                }
                             </p>
                         </div>
                     </CardContent>
@@ -809,12 +883,19 @@ export default function EnhancedLeadDiscoveryPage() {
                 </div>
             )}
 
-            {/* RESULTS TABS - This is the key part that was missing! */}
+            {/* RESULTS TABS - Keeping your existing layout exactly */}
             {(discoveredLeads.length > 0 || vcContacts.length > 0) && (
                 <Card>
                     <CardHeader>
                         <CardTitle>Discovery Results</CardTitle>
-                        <CardDescription>Companies and VCs with complete contact information</CardDescription>
+                        <CardDescription>
+                            Companies and VCs with complete contact information
+                            {isDemoMode && (
+                                <Badge variant="outline" className="ml-2 bg-yellow-50 text-yellow-700">
+                                    Demo Data
+                                </Badge>
+                            )}
+                        </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -1048,6 +1129,11 @@ export default function EnhancedLeadDiscoveryPage() {
                         <h3 className="text-lg font-semibold mb-2">Ready for Universal Discovery</h3>
                         <p className="text-gray-600 mb-4">
                             Find companies, founders, and VCs with complete contact information
+                            {isDemoMode && (
+                                <span className="block text-sm text-blue-600 mt-1">
+                                    Demo mode: Will generate realistic mock data
+                                </span>
+                            )}
                         </p>
                         <Button onClick={handleSearch} className="bg-gradient-to-r from-blue-500 to-purple-600">
                             <Search className="w-4 h-4 mr-2" />
@@ -1057,18 +1143,22 @@ export default function EnhancedLeadDiscoveryPage() {
                 </Card>
             )}
 
-            {/* Debug Info - Remove this after testing */}
+            {/* Debug Info */}
             {(discoveredLeads.length > 0 || vcContacts.length > 0) && (
                 <Card className="bg-gray-50">
                     <CardContent className="p-4">
                         <h4 className="font-medium mb-2">Debug Info:</h4>
                         <div className="text-sm text-gray-600 space-y-1">
+                            <p>Mode: {isDemoMode ? 'Demo (Mock Data)' : 'Production (Real Apollo API)'}</p>
                             <p>Discovered Leads: {discoveredLeads.length}</p>
                             <p>VC Contacts: {vcContacts.length}</p>
                             <p>Total Individual Contacts: {totalIndividualContacts}</p>
                             <p>Selected Companies: {selectedCompanies.size}</p>
                             <p>Selected VCs: {selectedVCs.size}</p>
                             <p>Active Tab: {activeTab}</p>
+                            {demoStatus && (
+                                <p>Apollo Service: {demoStatus.isDemoMode ? 'Demo Service' : 'Real Service'}</p>
+                            )}
                         </div>
                     </CardContent>
                 </Card>

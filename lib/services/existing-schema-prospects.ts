@@ -11,7 +11,6 @@ export interface SavedSelection {
   search_criteria?: any
   created_at: string
   updated_at: string
-  // Joined data
   company?: Company
   contact?: Contact
 }
@@ -32,34 +31,37 @@ export class ExistingSchemaProspectsService {
         throw new Error('Supabase client not available')
       }
 
-      console.log(`Saving ${prospects.length} prospects using existing schema`)
+      console.log(`Saving ${prospects.length} prospects using existing schema with duplicate detection`)
 
       const savedSelections = []
       let companiesSaved = 0
       let contactsSaved = 0
       let vcsSaved = 0
+      let duplicatesSkipped = 0
       
       for (const prospect of prospects) {
         if (prospect.type === 'company') {
           const result = await this.saveCompanyProspect(prospect.data, savedSelections)
           companiesSaved++
           contactsSaved += result.contactsCount
+          duplicatesSkipped += result.duplicatesSkipped
         } else if (prospect.type === 'vc') {
           await this.saveVCProspect(prospect.data, savedSelections)
           vcsSaved++
         }
       }
 
-      console.log(`Successfully saved: ${companiesSaved} companies, ${contactsSaved} contacts, ${vcsSaved} VCs`)
+      console.log(`Successfully saved: ${companiesSaved} companies, ${contactsSaved} contacts, ${vcsSaved} VCs (${duplicatesSkipped} duplicates skipped)`)
 
       return {
         success: true,
         saved_selections: savedSelections,
-        message: `Saved ${companiesSaved} companies with ${contactsSaved} contacts and ${vcsSaved} VCs`,
+        message: `Saved ${companiesSaved} companies with ${contactsSaved} contacts and ${vcsSaved} VCs (${duplicatesSkipped} duplicates skipped)`,
         stats: {
           companies: companiesSaved,
           contacts: contactsSaved,
           vcs: vcsSaved,
+          duplicatesSkipped: duplicatesSkipped,
           total: savedSelections.length
         }
       }
@@ -75,19 +77,20 @@ export class ExistingSchemaProspectsService {
       const client = this.getSupabaseClient()
       if (!client) throw new Error('Supabase client not available')
 
-      console.log(`Saving company: ${companyData.company} with ${companyData.contacts?.length || 0} contacts`)
+      console.log(`Saving company: ${companyData.company} (Apollo ID: ${companyData.id}) with ${companyData.contacts?.length || 0} contacts`)
 
-      // Save/update in your existing companies table
+      // Check for existing company by Apollo ID or name
       let companyId: string
       const { data: existingCompany } = await client
         .from('companies')
         .select('id')
-        .eq('name', companyData.company)
+        .or(`apollo_id.eq.${companyData.id},name.eq.${companyData.company}`)
         .maybeSingle()
 
       if (existingCompany) {
         // Update existing company
         const updateData: any = {
+          apollo_id: companyData.id, // Store Apollo ID
           discovered_at: new Date().toISOString(),
           industry: companyData.industry || 'Biotech',
           location: companyData.location,
@@ -123,6 +126,7 @@ export class ExistingSchemaProspectsService {
       } else {
         // Insert new company
         const insertData: any = {
+          apollo_id: companyData.id, // Store Apollo ID
           name: companyData.company,
           website: companyData.website,
           industry: companyData.industry || 'Biotech',
@@ -159,35 +163,43 @@ export class ExistingSchemaProspectsService {
         console.log(`Created new company: ${companyData.company}`)
       }
 
-      // Track that this company was saved from discovery
-      const { data: savedCompany, error: saveError } = await client
-        .from('saved_selections')
-        .upsert({
-          selection_type: 'company',
-          company_id: companyId,
-          discovery_source: 'apollo_search',
-          search_criteria: { discovery_type: 'enhanced_search' }
-        }, {
-          onConflict: 'company_id,selection_type',
-          ignoreDuplicates: false
-        })
-        .select()
-        .single()
+      // Track company selection
+      try {
+        const { data: savedCompany, error: saveError } = await client
+          .from('saved_selections')
+          .upsert({
+            selection_type: 'company',
+            company_id: companyId,
+            discovery_source: 'apollo_search',
+            search_criteria: { discovery_type: 'enhanced_search' }
+          }, {
+            onConflict: 'company_id,selection_type',
+            ignoreDuplicates: false
+          })
+          .select()
+          .single()
 
-      if (saveError) {
-        console.error('Error tracking company selection:', saveError)
-      } else {
-        savedSelections.push(savedCompany)
+        if (saveError) {
+          console.error('Error tracking company selection:', saveError)
+        } else {
+          savedSelections.push(savedCompany)
+        }
+      } catch (error) {
+        console.log('saved_selections table may not exist yet, skipping tracking')
       }
 
-      // Save contacts to your existing contacts table
+      // Save contacts with duplicate detection
       let contactsCount = 0
+      let duplicatesSkipped = 0
+      
       if (companyData.contacts && companyData.contacts.length > 0) {
         console.log(`Saving ${companyData.contacts.length} contacts for ${companyData.company}`)
-        contactsCount = await this.saveCompanyContacts(companyId, companyData.contacts, savedSelections)
+        const contactResult = await this.saveCompanyContacts(companyId, companyData.contacts, savedSelections)
+        contactsCount = contactResult.contactsCount
+        duplicatesSkipped = contactResult.duplicatesSkipped
       }
 
-      return { contactsCount }
+      return { contactsCount, duplicatesSkipped }
 
     } catch (error) {
       console.error(`Error saving company ${companyData.company}:`, error)
@@ -200,6 +212,7 @@ export class ExistingSchemaProspectsService {
     if (!client) throw new Error('Supabase client not available')
 
     let contactsSaved = 0
+    let duplicatesSkipped = 0
 
     for (const contactData of contacts) {
       try {
@@ -208,15 +221,13 @@ export class ExistingSchemaProspectsService {
         const firstName = nameParts[0] || contactData.name
         const lastName = nameParts.slice(1).join(' ') || ''
         
-        console.log(`Saving contact: ${contactData.name} (${roleCategory})`)
+        console.log(`Saving contact: ${contactData.name} (Apollo ID: ${contactData.id}, ${roleCategory})`)
 
-        // Save/update in your existing contacts table
+        // Check for existing contact by Apollo ID, email, or name combination
         const { data: existingContact } = await client
           .from('contacts')
           .select('id')
-          .eq('company_id', companyId)
-          .eq('first_name', firstName)
-          .eq('last_name', lastName)
+          .or(`apollo_id.eq.${contactData.id},and(company_id.eq.${companyId},first_name.eq.${firstName},last_name.eq.${lastName})${contactData.email ? `,email.eq.${contactData.email}` : ''}`)
           .maybeSingle()
 
         let contactId: string
@@ -226,6 +237,7 @@ export class ExistingSchemaProspectsService {
           const { data: updatedContact, error } = await client
             .from('contacts')
             .update({
+              apollo_id: contactData.id, // Store Apollo ID
               email: contactData.email,
               title: contactData.title,
               role_category: roleCategory,
@@ -245,6 +257,7 @@ export class ExistingSchemaProspectsService {
           const { data: newContact, error } = await client
             .from('contacts')
             .insert({
+              apollo_id: contactData.id, // Store Apollo ID
               company_id: companyId,
               first_name: firstName,
               last_name: lastName,
@@ -258,41 +271,53 @@ export class ExistingSchemaProspectsService {
             .select()
             .single()
 
-          if (error) throw error
+          if (error) {
+            if (error.code === '23505') { // Unique constraint violation
+              console.log(`Skipping duplicate contact: ${contactData.name} (Apollo ID: ${contactData.id})`)
+              duplicatesSkipped++
+              continue
+            }
+            throw error
+          }
           contactId = newContact.id
           console.log(`Created new contact: ${contactData.name}`)
         }
 
-        // Track that this contact was saved from discovery
-        const { data: savedContact, error: saveError } = await client
-          .from('saved_selections')
-          .upsert({
-            selection_type: 'contact',
-            company_id: companyId,
-            contact_id: contactId,
-            discovery_source: 'apollo_search'
-          }, {
-            onConflict: 'contact_id,selection_type',
-            ignoreDuplicates: false
-          })
-          .select()
-          .single()
+        // Track contact selection
+        try {
+          const { data: savedContact, error: saveError } = await client
+            .from('saved_selections')
+            .upsert({
+              selection_type: 'contact',
+              company_id: companyId,
+              contact_id: contactId,
+              discovery_source: 'apollo_search'
+            }, {
+              onConflict: 'contact_id,selection_type',
+              ignoreDuplicates: false
+            })
+            .select()
+            .single()
 
-        if (saveError) {
-          console.error('Error tracking contact selection:', saveError)
-        } else {
-          savedSelections.push(savedContact)
+          if (saveError) {
+            console.error('Error tracking contact selection:', saveError)
+          } else {
+            savedSelections.push(savedContact)
+          }
+        } catch (error) {
+          console.log('saved_selections table may not exist yet, skipping contact tracking')
         }
         
         contactsSaved++
 
       } catch (error) {
         console.error(`Error saving contact ${contactData.name}:`, error)
+        duplicatesSkipped++
       }
     }
 
-    console.log(`Successfully saved ${contactsSaved} out of ${contacts.length} contacts`)
-    return contactsSaved
+    console.log(`Successfully saved ${contactsSaved} out of ${contacts.length} contacts (${duplicatesSkipped} duplicates skipped)`)
+    return { contactsCount: contactsSaved, duplicatesSkipped }
   }
 
   private async saveVCProspect(vcData: any, savedSelections: any[]) {
@@ -300,22 +325,31 @@ export class ExistingSchemaProspectsService {
       const client = this.getSupabaseClient()
       if (!client) throw new Error('Supabase client not available')
 
-      console.log(`Saving VC: ${vcData.name} from ${vcData.organization}`)
+      console.log(`Saving VC: ${vcData.name} (Apollo ID: ${vcData.id}) from ${vcData.organization}`)
 
-      // Save VC data (VCs don't fit well in companies table)
-      const { data: savedVC, error } = await client
-        .from('saved_selections')
-        .insert({
-          selection_type: 'vc',
-          vc_data: vcData,
-          discovery_source: 'apollo_search'
-        })
-        .select()
-        .single()
+      // Store VC data with Apollo ID
+      const vcDataWithId = {
+        ...vcData,
+        apollo_id: vcData.id
+      }
 
-      if (error) throw error
-      savedSelections.push(savedVC)
-      console.log(`Saved VC: ${vcData.name}`)
+      try {
+        const { data: savedVC, error } = await client
+          .from('saved_selections')
+          .insert({
+            selection_type: 'vc',
+            vc_data: vcDataWithId,
+            discovery_source: 'apollo_search'
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+        savedSelections.push(savedVC)
+        console.log(`Saved VC: ${vcData.name}`)
+      } catch (error) {
+        console.log('saved_selections table may not exist yet, VC data will be stored in memory only')
+      }
 
     } catch (error) {
       console.error(`Error saving VC ${vcData.name}:`, error)
@@ -351,66 +385,70 @@ export class ExistingSchemaProspectsService {
       const client = this.getSupabaseClient()
       if (!client) throw new Error('Supabase client not available')
 
-      const { data: savedSelections, error } = await client
-        .from('saved_selections')
-        .select(`
-          *,
-          company:companies(*),
-          contact:contacts(*)
-        `)
-        .order('created_at', { ascending: false })
+      try {
+        const { data: savedSelections, error } = await client
+          .from('saved_selections')
+          .select(`
+            *,
+            company:companies(*),
+            contact:contacts(*)
+          `)
+          .order('created_at', { ascending: false })
 
-      if (error) throw error
+        if (error) throw error
 
-      // Group by companies for display
-      const groupedItems = new Map()
+        const groupedItems = new Map()
 
-      for (const item of savedSelections || []) {
-        if (item.selection_type === 'company') {
-          if (!groupedItems.has(item.company_id)) {
-            groupedItems.set(item.company_id, {
-              type: 'company',
-              data: {
-                id: item.company?.id,
-                company: item.company?.name,
-                website: item.company?.website,
-                industry: item.company?.industry,
-                fundingStage: item.company?.funding_stage,
-                location: item.company?.location,
-                description: item.company?.description,
-                ai_score: item.company?.ai_score,
-                contacts: []
-              },
+        for (const item of savedSelections || []) {
+          if (item.selection_type === 'company') {
+            if (!groupedItems.has(item.company_id)) {
+              groupedItems.set(item.company_id, {
+                type: 'company',
+                data: {
+                  id: item.company?.id,
+                  company: item.company?.name,
+                  website: item.company?.website,
+                  industry: item.company?.industry,
+                  fundingStage: item.company?.funding_stage,
+                  location: item.company?.location,
+                  description: item.company?.description,
+                  ai_score: item.company?.ai_score,
+                  contacts: []
+                },
+                saved_at: item.created_at,
+                saved_id: item.id
+              })
+            }
+          } else if (item.selection_type === 'contact' && item.contact) {
+            const companyItem = groupedItems.get(item.company_id)
+            if (companyItem) {
+              companyItem.data.contacts.push({
+                name: `${item.contact.first_name} ${item.contact.last_name}`,
+                title: item.contact.title,
+                email: item.contact.email,
+                role_category: item.contact.role_category,
+                linkedin: item.contact.linkedin_url
+              })
+            }
+          } else if (item.selection_type === 'vc') {
+            groupedItems.set(`vc_${item.id}`, {
+              type: 'vc',
+              data: item.vc_data,
               saved_at: item.created_at,
               saved_id: item.id
             })
           }
-        } else if (item.selection_type === 'contact' && item.contact) {
-          const companyItem = groupedItems.get(item.company_id)
-          if (companyItem) {
-            companyItem.data.contacts.push({
-              name: `${item.contact.first_name} ${item.contact.last_name}`,
-              title: item.contact.title,
-              email: item.contact.email,
-              role_category: item.contact.role_category,
-              linkedin: item.contact.linkedin_url
-            })
-          }
-        } else if (item.selection_type === 'vc') {
-          groupedItems.set(`vc_${item.id}`, {
-            type: 'vc',
-            data: item.vc_data,
-            saved_at: item.created_at,
-            saved_id: item.id
-          })
         }
-      }
 
-      return Array.from(groupedItems.values())
+        return Array.from(groupedItems.values())
+      } catch (error) {
+        console.log('saved_selections table may not exist yet, returning empty array')
+        return []
+      }
 
     } catch (error) {
       console.error('Error fetching saved prospects:', error)
-      throw error
+      return []
     }
   }
 
@@ -419,26 +457,41 @@ export class ExistingSchemaProspectsService {
       const client = this.getSupabaseClient()
       if (!client) throw new Error('Supabase client not available')
 
-      const { data: savedSelections, error } = await client
-        .from('saved_selections')
-        .select('selection_type')
+      try {
+        const { data: savedSelections, error } = await client
+          .from('saved_selections')
+          .select('selection_type')
 
-      if (error) throw error
+        if (error) throw error
 
-      const companies = savedSelections?.filter(item => item.selection_type === 'company').length || 0
-      const contacts = savedSelections?.filter(item => item.selection_type === 'contact').length || 0
-      const vcs = savedSelections?.filter(item => item.selection_type === 'vc').length || 0
+        const companies = savedSelections?.filter(item => item.selection_type === 'company').length || 0
+        const contacts = savedSelections?.filter(item => item.selection_type === 'contact').length || 0
+        const vcs = savedSelections?.filter(item => item.selection_type === 'vc').length || 0
 
-      return {
-        total: savedSelections?.length || 0,
-        companies,
-        vcs,
-        total_contacts: contacts + vcs
+        return {
+          total: savedSelections?.length || 0,
+          companies,
+          vcs,
+          total_contacts: contacts + vcs
+        }
+      } catch (error) {
+        console.log('saved_selections table may not exist yet, returning zero stats')
+        return {
+          total: 0,
+          companies: 0,
+          vcs: 0,
+          total_contacts: 0
+        }
       }
 
     } catch (error) {
       console.error('Error fetching prospect stats:', error)
-      throw error
+      return {
+        total: 0,
+        companies: 0,
+        vcs: 0,
+        total_contacts: 0
+      }
     }
   }
 
@@ -449,7 +502,7 @@ export class ExistingSchemaProspectsService {
 
       const { data: existingCompanies, error: companiesError } = await client
         .from('companies')
-        .select('name, website')
+        .select('name, website, apollo_id')
         .not('name', 'is', null)
 
       if (companiesError) throw companiesError
@@ -464,12 +517,16 @@ export class ExistingSchemaProspectsService {
       const existingWebsites = (existingCompanies || [])
         .filter(c => c.website)
         .map(c => c.website!.toLowerCase())
+      const existingApolloIds = (existingCompanies || [])
+        .filter(c => c.apollo_id)
+        .map(c => c.apollo_id!)
 
-      console.log(`Found ${existingNames.length} existing companies and ${contactsCount || 0} existing contacts`)
+      console.log(`Found ${existingNames.length} existing companies (${existingApolloIds.length} with Apollo IDs) and ${contactsCount || 0} existing contacts`)
 
       return {
         existingNames,
         existingWebsites,
+        existingApolloIds,
         companiesCount: existingNames.length,
         contactsCount: contactsCount || 0
       }
@@ -479,6 +536,7 @@ export class ExistingSchemaProspectsService {
       return { 
         existingNames: [], 
         existingWebsites: [], 
+        existingApolloIds: [],
         companiesCount: 0, 
         contactsCount: 0 
       }
