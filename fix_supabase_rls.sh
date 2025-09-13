@@ -1,3 +1,38 @@
+#!/bin/bash
+
+echo "🔧 Fixing Supabase RLS Permission Error"
+echo "======================================="
+
+echo "The error 'new row violates row-level security policy' means:"
+echo "• Row Level Security (RLS) is enabled on your companies table"
+echo "• Your API doesn't have permission to INSERT into companies table"
+echo ""
+echo "Here are 3 solutions:"
+echo ""
+
+# Solution 1: Update API to handle RLS gracefully
+echo "📝 SOLUTION 1: Update API to handle company creation gracefully"
+echo ""
+
+# Find the API route
+API_ROUTE=""
+if [[ -f "app/api/contacts/route.ts" ]]; then
+    API_ROUTE="app/api/contacts/route.ts"
+elif [[ -f "pages/api/contacts.ts" ]]; then
+    API_ROUTE="pages/api/contacts.ts"
+else
+    echo "❌ Could not find API route"
+    exit 1
+fi
+
+# Backup current API
+BACKUP_FILE="${API_ROUTE}.backup.$(date +%Y%m%d_%H%M%S)"
+cp "$API_ROUTE" "$BACKUP_FILE"
+echo "💾 API backup created: $BACKUP_FILE"
+
+echo "🔧 Updating API to handle RLS errors gracefully..."
+
+cat > "$API_ROUTE" << 'EOF'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -253,3 +288,42 @@ export async function POST(request: NextRequest) {
     }, { status: 500 })
   }
 }
+EOF
+
+echo ""
+echo "✅ API Updated to Handle RLS Errors!"
+echo ""
+echo "SOLUTION 2: Fix Supabase RLS Policies"
+echo "====================================="
+echo ""
+echo "Go to your Supabase dashboard and run these SQL commands:"
+echo ""
+echo "-- Option A: Disable RLS on companies table (quick fix)"
+echo "ALTER TABLE companies DISABLE ROW LEVEL SECURITY;"
+echo ""
+echo "-- Option B: Create INSERT policy for companies table (more secure)"
+echo "CREATE POLICY \"Allow insert for authenticated users\" ON companies"
+echo "  FOR INSERT TO anon"
+echo "  WITH CHECK (true);"
+echo ""
+echo "-- Option C: Create INSERT policy for all operations"
+echo "CREATE POLICY \"Allow all operations\" ON companies"
+echo "  FOR ALL TO anon"
+echo "  USING (true)"
+echo "  WITH CHECK (true);"
+echo ""
+echo "SOLUTION 3: Use Service Role Key"
+echo "==============================="
+echo ""
+echo "In your .env.local, replace NEXT_PUBLIC_SUPABASE_ANON_KEY with:"
+echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=your_service_role_key"
+echo ""
+echo "(Service role key bypasses RLS policies)"
+echo ""
+echo "🔧 Current Fix Applied:"
+echo "• API now continues creating contacts even if company creation fails"
+echo "• Company info is still stored with the contact (just not linked in DB)"
+echo "• No more 500 errors - contacts will save successfully"
+echo "• You'll get a warning if company couldn't be linked"
+echo ""
+echo "Test adding a contact now - it should work!"

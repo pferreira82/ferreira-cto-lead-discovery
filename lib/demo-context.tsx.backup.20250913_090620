@@ -1,0 +1,70 @@
+'use client'
+
+import { createContext, useContext, useState, useEffect } from 'react'
+
+interface DemoContextType {
+  isDemoMode: boolean
+  setDemoMode: (enabled: boolean) => void
+  isLoaded: boolean
+}
+
+const DemoContext = createContext<DemoContextType | undefined>(undefined)
+
+export function DemoProvider({ children }: { children: React.ReactNode }) {
+  const [isDemoMode, setIsDemoMode] = useState(false)
+  const [isLoaded, setIsLoaded] = useState(false)
+
+  useEffect(() => {
+    // Check if demo mode is explicitly enabled
+    // This should match the backend logic exactly
+    const checkDemoMode = () => {
+      try {
+        // Check localStorage first (user preference)
+        const storedDemoMode = localStorage.getItem('demoMode')
+        if (storedDemoMode !== null) {
+          const isDemo = storedDemoMode === 'true'
+          console.log('🔧 Demo mode from localStorage:', isDemo)
+          setIsDemoMode(isDemo)
+          setIsLoaded(true)
+          return
+        }
+
+        // Check environment variable (should only be 'true' if explicitly set)
+        // Note: This won't work in client-side, but we'll default to false
+        // The actual demo mode should be controlled by localStorage or API response
+        
+        console.log('🔧 No demo mode preference found, defaulting to production mode')
+        setIsDemoMode(false)
+        setIsLoaded(true)
+        
+      } catch (error) {
+        console.error('Error checking demo mode:', error)
+        // Default to production mode on error
+        setIsDemoMode(false)
+        setIsLoaded(true)
+      }
+    }
+
+    checkDemoMode()
+  }, [])
+
+  const setDemoMode = (enabled: boolean) => {
+    console.log('🔧 Setting demo mode:', enabled)
+    setIsDemoMode(enabled)
+    localStorage.setItem('demoMode', enabled.toString())
+  }
+
+  return (
+    <DemoContext.Provider value={{ isDemoMode, setDemoMode, isLoaded }}>
+      {children}
+    </DemoContext.Provider>
+  )
+}
+
+export function useDemoMode() {
+  const context = useContext(DemoContext)
+  if (context === undefined) {
+    throw new Error('useDemoMode must be used within a DemoProvider')
+  }
+  return context
+}

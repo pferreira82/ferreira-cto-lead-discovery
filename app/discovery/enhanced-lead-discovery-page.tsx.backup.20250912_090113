@@ -268,7 +268,7 @@ export default function EnhancedLeadDiscoveryPage() {
 
         try {
             const result = await apolloService.searchCompaniesWithExecutives(
-                searchParams,
+                searchCriteria,
                 (step: string, current: number, total: number) => {
                     setCurrentStep(step)
                     setSearchProgress(Math.round((current / total) * 100))

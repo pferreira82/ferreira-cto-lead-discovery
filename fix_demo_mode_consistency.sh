@@ -1,3 +1,128 @@
+#!/bin/bash
+
+echo "🔧 Fixing Demo Mode Consistency"
+echo "==============================="
+
+# Check the demo context file
+DEMO_CONTEXT="lib/demo-context.tsx"
+
+if [[ -f "$DEMO_CONTEXT" ]]; then
+    echo "📄 Found demo context: $DEMO_CONTEXT"
+    echo ""
+    echo "Current demo context logic:"
+    grep -A 10 -B 5 "isDemoMode" "$DEMO_CONTEXT" | head -20
+    echo ""
+    
+    # Create backup
+    BACKUP_FILE="${DEMO_CONTEXT}.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$DEMO_CONTEXT" "$BACKUP_FILE"
+    echo "💾 Backup created: $BACKUP_FILE"
+    
+else
+    echo "❌ Demo context file not found, creating it..."
+    mkdir -p lib
+fi
+
+echo "🔧 Creating consistent demo mode logic..."
+
+# Create demo context with proper logic
+cat > "$DEMO_CONTEXT" << 'EOF'
+'use client'
+
+import { createContext, useContext, useState, useEffect } from 'react'
+
+interface DemoContextType {
+  isDemoMode: boolean
+  setDemoMode: (enabled: boolean) => void
+  isLoaded: boolean
+}
+
+const DemoContext = createContext<DemoContextType | undefined>(undefined)
+
+export function DemoProvider({ children }: { children: React.ReactNode }) {
+  const [isDemoMode, setIsDemoMode] = useState(false)
+  const [isLoaded, setIsLoaded] = useState(false)
+
+  useEffect(() => {
+    // Check if demo mode is explicitly enabled
+    // This should match the backend logic exactly
+    const checkDemoMode = () => {
+      try {
+        // Check localStorage first (user preference)
+        const storedDemoMode = localStorage.getItem('demoMode')
+        if (storedDemoMode !== null) {
+          const isDemo = storedDemoMode === 'true'
+          console.log('🔧 Demo mode from localStorage:', isDemo)
+          setIsDemoMode(isDemo)
+          setIsLoaded(true)
+          return
+        }
+
+        // Check environment variable (should only be 'true' if explicitly set)
+        // Note: This won't work in client-side, but we'll default to false
+        // The actual demo mode should be controlled by localStorage or API response
+        
+        console.log('🔧 No demo mode preference found, defaulting to production mode')
+        setIsDemoMode(false)
+        setIsLoaded(true)
+        
+      } catch (error) {
+        console.error('Error checking demo mode:', error)
+        // Default to production mode on error
+        setIsDemoMode(false)
+        setIsLoaded(true)
+      }
+    }
+
+    checkDemoMode()
+  }, [])
+
+  const setDemoMode = (enabled: boolean) => {
+    console.log('🔧 Setting demo mode:', enabled)
+    setIsDemoMode(enabled)
+    localStorage.setItem('demoMode', enabled.toString())
+  }
+
+  return (
+    <DemoContext.Provider value={{ isDemoMode, setDemoMode, isLoaded }}>
+      {children}
+    </DemoContext.Provider>
+  )
+}
+
+// Export alias for compatibility
+export const DemoModeProvider = DemoProvider
+
+export function useDemoMode() {
+  const context = useContext(DemoContext)
+  if (context === undefined) {
+    throw new Error('useDemoMode must be used within a DemoProvider')
+  }
+  return context
+}
+EOF
+
+echo ""
+echo "🔧 Updating contacts page to handle production mode properly..."
+
+# Find the contacts page
+CONTACTS_PAGE=""
+if [[ -f "app/contacts/page.tsx" ]]; then
+    CONTACTS_PAGE="app/contacts/page.tsx"
+elif [[ -f "pages/contacts.tsx" ]]; then
+    CONTACTS_PAGE="pages/contacts.tsx"
+else
+    echo "❌ Could not find contacts page"
+    exit 1
+fi
+
+# Create backup
+BACKUP_FILE="${CONTACTS_PAGE}.backup.$(date +%Y%m%d_%H%M%S)"
+cp "$CONTACTS_PAGE" "$BACKUP_FILE"
+echo "💾 Backup created: $BACKUP_FILE"
+
+# Create contacts page that respects demo mode properly
+cat > "$CONTACTS_PAGE" << 'EOF'
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -36,7 +161,9 @@ import {
   Play,
   Database,
   X,
-  AlertCircle
+  AlertCircle,
+  CheckCircle,
+  Settings
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { useDemoMode } from '@/lib/demo-context'
@@ -62,100 +189,6 @@ interface Contact {
   }
 }
 
-// Local demo data - no API calls needed
-const DEMO_CONTACTS: Contact[] = [
-  {
-    id: 'demo-1',
-    first_name: 'Sarah',
-    last_name: 'Chen',
-    email: 'sarah.chen@nexustherapeutics.com',
-    phone: '+1-555-0123',
-    title: 'Chief Executive Officer',
-    role_category: 'Founder',
-    linkedin_url: 'https://linkedin.com/in/sarah-chen',
-    contact_status: 'not_contacted',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    companies: {
-      name: 'Nexus Therapeutics',
-      industry: 'Biotechnology',
-      funding_stage: 'Series A'
-    }
-  },
-  {
-    id: 'demo-2',
-    first_name: 'Michael',
-    last_name: 'Rodriguez',
-    email: 'mrodriguez@bioventures.com',
-    phone: '+1-555-0456',
-    title: 'Partner',
-    role_category: 'VC',
-    linkedin_url: 'https://linkedin.com/in/michael-rodriguez',
-    contact_status: 'contacted',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    companies: {
-      name: 'BioVentures Capital',
-      industry: 'Venture Capital',
-      funding_stage: 'N/A'
-    }
-  },
-  {
-    id: 'demo-3',
-    first_name: 'Dr. Emily',
-    last_name: 'Watson',
-    email: 'emily.watson@genomicsinc.com',
-    phone: '+1-555-0789',
-    title: 'Chief Scientific Officer',
-    role_category: 'Executive',
-    linkedin_url: 'https://linkedin.com/in/emily-watson-phd',
-    contact_status: 'responded',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    companies: {
-      name: 'Genomics Inc.',
-      industry: 'Biotechnology',
-      funding_stage: 'Series B'
-    }
-  },
-  {
-    id: 'demo-4',
-    first_name: 'James',
-    last_name: 'Park',
-    email: 'j.park@medtechfund.com',
-    phone: '+1-555-0321',
-    title: 'Managing Partner',
-    role_category: 'VC',
-    linkedin_url: 'https://linkedin.com/in/jamespark',
-    contact_status: 'interested',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    companies: {
-      name: 'MedTech Fund',
-      industry: 'Venture Capital',
-      funding_stage: 'N/A'
-    }
-  },
-  {
-    id: 'demo-5',
-    first_name: 'Dr. Lisa',
-    last_name: 'Thompson',
-    email: 'lisa.thompson@biorapid.com',
-    phone: '+1-555-0654',
-    title: 'Founder & CEO',
-    role_category: 'Founder',
-    linkedin_url: 'https://linkedin.com/in/lisathompson',
-    contact_status: 'not_interested',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    companies: {
-      name: 'BioRapid',
-      industry: 'Biotechnology',
-      funding_stage: 'Seed'
-    }
-  }
-]
-
 const statusColors = {
   'not_contacted': 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
   'contacted': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
@@ -172,7 +205,7 @@ const roleColors = {
 }
 
 export default function ContactsPage() {
-  const { isDemoMode, isLoaded } = useDemoMode()
+  const { isDemoMode, setDemoMode, isLoaded } = useDemoMode()
   const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedContacts, setSelectedContacts] = useState<string[]>([])
@@ -181,6 +214,7 @@ export default function ContactsPage() {
   const [showAddContactDialog, setShowAddContactDialog] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [addingContact, setAddingContact] = useState(false)
+  const [apiResponse, setApiResponse] = useState<any>(null)
 
   // New contact form state
   const [newContact, setNewContact] = useState({
@@ -197,49 +231,59 @@ export default function ContactsPage() {
   })
 
   useEffect(() => {
+    console.log('🔄 Demo mode state changed:', { isDemoMode, isLoaded })
     if (isLoaded) {
-      loadContacts()
+      fetchContacts()
     }
   }, [isDemoMode, isLoaded])
 
-  const loadContacts = async () => {
+  const fetchContacts = async () => {
     try {
       setLoading(true)
       setError(null)
       
-      if (isDemoMode) {
-        // Demo mode: Use local mock data, no API calls
-        console.log('📊 Demo mode: Loading local mock data')
-        setContacts(DEMO_CONTACTS)
-        toast.success(`Loaded ${DEMO_CONTACTS.length} demo contacts`)
-      } else {
-        // Production mode: Call Supabase API
-        console.log('🔍 Production mode: Fetching from Supabase API')
+      console.log('🔍 Fetching contacts...')
+      console.log('📊 Current demo mode (frontend):', isDemoMode)
+      
+      const response = await fetch('/api/contacts', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store'
+      })
+      
+      console.log('📡 Response status:', response.status)
+      
+      const data = await response.json()
+      console.log('📊 Full API response:', data)
+      setApiResponse(data)
+      
+      // CRITICAL: Only use contacts if the response is successful
+      // Never show demo data in production mode
+      if (data.success) {
+        setContacts(data.contacts || [])
+        setError(null)
         
-        const response = await fetch('/api/contacts', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store'
-        })
-        
-        const data = await response.json()
-        console.log('📡 API response:', data)
-        
-        if (data.success) {
-          setContacts(data.contacts || [])
-          toast.success(`Loaded ${data.contacts?.length || 0} contacts from database`)
-        } else {
-          throw new Error(data.error || 'Failed to load contacts')
+        const contactCount = data.contacts?.length || 0
+        if (data.source === 'demo') {
+          toast.success(`Loaded ${contactCount} demo contacts`)
+        } else if (data.source === 'supabase') {
+          toast.success(`Loaded ${contactCount} contacts from database`)
         }
+      } else {
+        // API returned error - show it properly
+        console.error('❌ API returned error:', data.error)
+        setError(data.error || 'Unknown error occurred')
+        setContacts([]) // Clear any existing contacts
+        toast.error(`Error: ${data.error}`)
       }
       
     } catch (error) {
-      console.error('❌ Failed to load contacts:', error)
-      setError(error instanceof Error ? error.message : 'Unknown error occurred')
-      toast.error(`Failed to load contacts: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      setContacts([])
+      console.error('❌ Failed to fetch contacts:', error)
+      setError(error instanceof Error ? error.message : 'Network error occurred')
+      setContacts([]) // Clear any existing contacts
+      toast.error(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setLoading(false)
     }
@@ -255,83 +299,58 @@ export default function ContactsPage() {
         return
       }
       
-      if (isDemoMode) {
-        // Demo mode: Add to local state only
-        console.log('📊 Demo mode: Adding contact locally')
-        
-        const newDemoContact: Contact = {
-          id: `demo-${Date.now()}`,
-          first_name: newContact.first_name.trim(),
-          last_name: newContact.last_name.trim(),
-          email: newContact.email.trim() || undefined,
-          phone: newContact.phone.trim() || undefined,
-          title: newContact.title.trim() || undefined,
-          role_category: newContact.role_category as any || undefined,
-          linkedin_url: newContact.linkedin_url.trim() || undefined,
-          contact_status: 'not_contacted',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          companies: newContact.company_name.trim() ? {
-            name: newContact.company_name.trim(),
-            industry: newContact.company_industry.trim() || undefined,
-            funding_stage: newContact.company_funding_stage || undefined
-          } : undefined
-        }
-        
-        setContacts(prev => [newDemoContact, ...prev])
-        toast.success(`Demo contact ${newDemoContact.first_name} ${newDemoContact.last_name} added!`)
-        
-      } else {
-        // Production mode: Save to Supabase
-        console.log('🔍 Production mode: Saving to Supabase')
-        
-        const contactData = {
-          first_name: newContact.first_name.trim(),
-          last_name: newContact.last_name.trim(),
-          email: newContact.email.trim() || null,
-          phone: newContact.phone.trim() || null,
-          title: newContact.title.trim() || null,
-          role_category: newContact.role_category || null,
-          linkedin_url: newContact.linkedin_url.trim() || null,
-          companies: newContact.company_name.trim() ? {
-            name: newContact.company_name.trim(),
-            industry: newContact.company_industry.trim() || null,
-            funding_stage: newContact.company_funding_stage || null
-          } : null
-        }
-        
-        const response = await fetch('/api/contacts', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(contactData)
-        })
-        
-        const data = await response.json()
-        
-        if (data.success && data.contact) {
-          setContacts(prev => [data.contact, ...prev])
-          toast.success(`Contact ${data.contact.first_name} ${data.contact.last_name} saved to database!`)
-        } else {
-          throw new Error(data.error || 'Failed to save contact')
-        }
+      // Prepare the contact data
+      const contactData = {
+        first_name: newContact.first_name.trim(),
+        last_name: newContact.last_name.trim(),
+        email: newContact.email.trim() || null,
+        phone: newContact.phone.trim() || null,
+        title: newContact.title.trim() || null,
+        role_category: newContact.role_category || null,
+        linkedin_url: newContact.linkedin_url.trim() || null,
+        companies: newContact.company_name.trim() ? {
+          name: newContact.company_name.trim(),
+          industry: newContact.company_industry.trim() || null,
+          funding_stage: newContact.company_funding_stage || null
+        } : null
       }
       
-      // Reset form and close dialog
-      setNewContact({
-        first_name: '',
-        last_name: '',
-        email: '',
-        phone: '',
-        title: '',
-        role_category: '',
-        linkedin_url: '',
-        company_name: '',
-        company_industry: '',
-        company_funding_stage: ''
+      console.log('➕ Adding new contact:', contactData)
+      console.log('📊 Current demo mode during add:', isDemoMode)
+      
+      const response = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(contactData)
       })
-      setShowAddContactDialog(false)
+      
+      const data = await response.json()
+      console.log('📡 Add contact response:', data)
+      
+      if (data.success && data.contact) {
+        setContacts(prev => [data.contact, ...prev])
+        toast.success(`Contact ${data.contact.first_name} ${data.contact.last_name} added successfully!`)
+        
+        // Reset form and close dialog
+        setNewContact({
+          first_name: '',
+          last_name: '',
+          email: '',
+          phone: '',
+          title: '',
+          role_category: '',
+          linkedin_url: '',
+          company_name: '',
+          company_industry: '',
+          company_funding_stage: ''
+        })
+        setShowAddContactDialog(false)
+      } else {
+        console.error('❌ Failed to add contact:', data.error)
+        toast.error(data.error || 'Failed to add contact')
+      }
       
     } catch (error) {
       console.error('❌ Error adding contact:', error)
@@ -375,31 +394,33 @@ export default function ContactsPage() {
     )
   }
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Contacts</h1>
-            <p className="text-gray-600 dark:text-gray-400">Loading contacts...</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardContent className="p-6">
-                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-2"></div>
-                <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-6">
+      {/* Debug Info Banner */}
+      <Card className="border-0 shadow-sm bg-yellow-50 dark:bg-yellow-900/20">
+        <CardContent className="p-4">
+          <div className="flex items-center space-x-3">
+            <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+            <div className="flex-1">
+              <p className="font-medium text-yellow-800 dark:text-yellow-200">System Status</p>
+              <div className="text-sm text-yellow-600 dark:text-yellow-400 mt-1">
+                <p>Demo Mode: {isDemoMode ? 'ON' : 'OFF'} | Data Source: {apiResponse?.source || 'unknown'} | Contacts: {contacts.length}</p>
+                <p>API Success: {apiResponse?.success ? 'YES' : 'NO'} | Error: {apiResponse?.error || 'none'}</p>
+              </div>
+            </div>
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={() => setDemoMode(!isDemoMode)}
+              className="border-yellow-200 text-yellow-600 hover:bg-yellow-50"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Toggle Demo Mode
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Mode Info Banner */}
       <Card className={`border-0 shadow-sm ${isDemoMode ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-green-50 dark:bg-green-900/20'}`}>
         <CardContent className="p-4">
@@ -411,12 +432,12 @@ export default function ContactsPage() {
             )}
             <div>
               <p className={`font-medium ${isDemoMode ? 'text-blue-800 dark:text-blue-300' : 'text-green-800 dark:text-green-300'}`}>
-                {isDemoMode ? 'Demo Mode Active' : 'Production Mode Active'}
+                {isDemoMode ? 'Demo Data Active' : 'Production Mode'}
               </p>
               <p className={`text-sm ${isDemoMode ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`}>
                 {isDemoMode 
-                  ? 'Using local mock data for testing and exploration'
-                  : 'Connected to Supabase database'
+                  ? 'Showing sample contacts for testing and exploration'
+                  : 'Connected to live Supabase database'
                 }
               </p>
             </div>
@@ -431,17 +452,33 @@ export default function ContactsPage() {
             <div className="flex items-center space-x-3">
               <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
               <div className="flex-1">
-                <p className="font-medium text-red-800 dark:text-red-200">Error Loading Contacts</p>
+                <p className="font-medium text-red-800 dark:text-red-200">Database Error</p>
                 <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                {!isDemoMode && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Enable demo mode to see sample data, or configure Supabase credentials.
+                  </p>
+                )}
               </div>
-              <Button 
-                size="sm" 
-                variant="outline" 
-                onClick={loadContacts}
-                className="border-red-200 text-red-600 hover:bg-red-50"
-              >
-                Retry
-              </Button>
+              <div className="flex space-x-2">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={fetchContacts}
+                  className="border-red-200 text-red-600 hover:bg-red-50"
+                >
+                  Retry
+                </Button>
+                {!isDemoMode && (
+                  <Button 
+                    size="sm" 
+                    onClick={() => setDemoMode(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    Enable Demo Mode
+                  </Button>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -458,7 +495,7 @@ export default function ContactsPage() {
         <div className="flex space-x-3">
           <Button 
             variant="outline" 
-            onClick={loadContacts}
+            onClick={fetchContacts}
             className="flex items-center space-x-2"
           >
             <RefreshCw className="w-4 h-4" />
@@ -471,6 +508,7 @@ export default function ContactsPage() {
           <Button 
             onClick={() => setShowAddContactDialog(true)}
             className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-purple-600"
+            disabled={!isDemoMode && !!error}
           >
             <UserPlus className="w-4 h-4" />
             <span>Add Contact</span>
@@ -513,7 +551,7 @@ export default function ContactsPage() {
         </CardContent>
       </Card>
 
-      {/* Contacts Table */}
+      {/* Contacts Table or Empty State */}
       <Card className="border-0 shadow-sm">
         {contacts.length > 0 ? (
           <Table>
@@ -637,15 +675,24 @@ export default function ContactsPage() {
         ) : (
           <CardContent className="p-12 text-center">
             <div className="text-gray-500">
-              <p className="font-medium">No contacts found</p>
-              <p className="text-sm mt-1">
-                {isDemoMode 
-                  ? 'No demo data available'
-                  : error 
-                    ? 'Unable to load from database'
-                    : 'Add your first contact to get started'
-                }
-              </p>
+              {loading ? (
+                <p>Loading contacts...</p>
+              ) : error ? (
+                <div>
+                  <p className="font-medium">No contacts available</p>
+                  <p className="text-sm mt-1">
+                    {isDemoMode 
+                      ? 'Demo mode is enabled but no demo data was returned'
+                      : 'Please configure your Supabase database or enable demo mode to see sample data'
+                    }
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p className="font-medium">No contacts found</p>
+                  <p className="text-sm mt-1">Add your first contact to get started</p>
+                </div>
+              )}
             </div>
           </CardContent>
         )}
@@ -655,11 +702,12 @@ export default function ContactsPage() {
       {showAddContactDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add New Contact</h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {isDemoMode ? 'Add to demo data (local only)' : 'Save to Supabase database'}
+                  Add a new biotech industry contact to your {isDemoMode ? 'demo' : 'database'}
                 </p>
               </div>
               <button
@@ -670,6 +718,7 @@ export default function ContactsPage() {
               </button>
             </div>
             
+            {/* Content */}
             <div className="p-6">
               <div className="grid gap-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -776,6 +825,7 @@ export default function ContactsPage() {
               </div>
             </div>
             
+            {/* Footer */}
             <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 dark:border-gray-700">
               <Button variant="outline" onClick={() => setShowAddContactDialog(false)}>
                 Cancel
@@ -785,7 +835,7 @@ export default function ContactsPage() {
                 disabled={!newContact.first_name || !newContact.last_name || addingContact}
                 className="bg-gradient-to-r from-blue-500 to-purple-600"
               >
-                {addingContact ? 'Adding...' : isDemoMode ? 'Add to Demo' : 'Save to Database'}
+                {addingContact ? 'Adding...' : 'Add Contact'}
               </Button>
             </div>
           </div>
@@ -831,3 +881,23 @@ export default function ContactsPage() {
     </div>
   )
 }
+EOF
+
+echo ""
+echo "✅ Demo Mode Consistency Fixed!"
+echo "==============================="
+echo ""
+echo "Changes made:"
+echo "• Updated demo-context to only use demo mode when explicitly enabled"
+echo "• Removed automatic fallback to demo data on errors"
+echo "• Added toggle button to switch demo mode on/off"
+echo "• Clear system status display showing current mode and data source"
+echo "• Proper error handling that doesn't show demo data in production"
+echo "• Consistent demo mode detection between frontend and backend"
+echo ""
+echo "Demo mode behavior:"
+echo "• Demo ON: Shows demo data (ignores Supabase)"
+echo "• Demo OFF: Uses Supabase only (shows errors if not configured)"
+echo "• No automatic fallbacks to demo data"
+echo ""
+echo "Toggle demo mode using the 'Toggle Demo Mode' button in the interface."

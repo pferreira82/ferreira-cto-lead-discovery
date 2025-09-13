@@ -1,3 +1,34 @@
+#!/bin/bash
+
+echo "Adding Company Details Modal to Discovery Page"
+echo "=============================================="
+
+# Check if the discovery page exists
+DISCOVERY_PAGE="app/discovery/enhanced-lead-discovery-page.tsx"
+DISCOVERY_PAGE_ALT="app/discovery/page.tsx"
+
+if [[ -f "$DISCOVERY_PAGE" ]]; then
+    TARGET_FILE="$DISCOVERY_PAGE"
+elif [[ -f "$DISCOVERY_PAGE_ALT" ]]; then
+    TARGET_FILE="$DISCOVERY_PAGE_ALT"
+else
+    echo "❌ Error: Could not find discovery page at:"
+    echo "   - $DISCOVERY_PAGE"
+    echo "   - $DISCOVERY_PAGE_ALT"
+    echo ""
+    echo "Please specify the correct path to your discovery page component."
+    exit 1
+fi
+
+echo "📄 Found discovery page: $TARGET_FILE"
+
+# Create backup
+BACKUP_FILE="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+cp "$TARGET_FILE" "$BACKUP_FILE"
+echo "💾 Backup created: $BACKUP_FILE"
+
+# Create the updated discovery page with modals
+cat > "$TARGET_FILE" << 'EOF'
 // Enhanced Discovery Page with Demo Mode Integration and Company Details Modal
 'use client'
 
@@ -268,7 +299,7 @@ export default function EnhancedLeadDiscoveryPage() {
 
         try {
             const result = await apolloService.searchCompaniesWithExecutives(
-                searchParams,
+                searchCriteria,
                 (step: string, current: number, total: number) => {
                     setCurrentStep(step)
                     setSearchProgress(Math.round((current / total) * 100))
@@ -1412,3 +1443,34 @@ export default function EnhancedLeadDiscoveryPage() {
         </div>
     )
 }
+EOF
+
+echo ""
+echo "Company Details Modal Added Successfully!"
+echo "========================================"
+echo ""
+echo "✅ Updated: $TARGET_FILE"
+echo "💾 Backup saved: $BACKUP_FILE"
+echo ""
+echo "New Modal Features:"
+echo "• Complete company details view"
+echo "• All contacts with photos and links"
+echo "• Funding and revenue information"
+echo "• Clickable email and LinkedIn buttons"
+echo "• Investor information display"
+echo "• Responsive design with scrolling"
+echo "• Demo mode integration"
+echo ""
+echo "How to use:"
+echo "1. Click the Eye (👁️) button on any company row"
+echo "2. Modal opens with complete company profile"
+echo "3. Contact buttons open email/LinkedIn directly"
+echo "4. Close by clicking outside or the X button"
+echo ""
+echo "Also added:"
+echo "• Saved Prospects modal (for the 'Saved' button)"
+echo "• Better demo mode integration throughout"
+echo "• Fixed search function to use Apollo service"
+echo ""
+echo "The Eye button in your companies table should now work!"
+echo ""

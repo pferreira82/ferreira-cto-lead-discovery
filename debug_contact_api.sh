@@ -1,3 +1,76 @@
+#!/bin/bash
+
+echo "🔍 Debugging Contact API Issues"
+echo "==============================="
+
+# Check if API route exists
+API_ROUTE_APP="app/api/contacts/route.ts"
+API_ROUTE_PAGES="pages/api/contacts.ts"
+
+echo "🔍 Checking API route files..."
+
+if [[ -f "$API_ROUTE_APP" ]]; then
+    echo "✅ Found API route: $API_ROUTE_APP"
+    echo ""
+    echo "📄 Checking POST handler..."
+    if grep -q "POST" "$API_ROUTE_APP"; then
+        echo "✅ POST handler found"
+    else
+        echo "❌ POST handler missing"
+    fi
+    
+    echo ""
+    echo "📄 API route exports:"
+    grep -E "^export" "$API_ROUTE_APP"
+    
+elif [[ -f "$API_ROUTE_PAGES" ]]; then
+    echo "✅ Found API route: $API_ROUTE_PAGES"
+    echo ""
+    echo "📄 Checking request handler..."
+    if grep -q "req.method.*POST" "$API_ROUTE_PAGES"; then
+        echo "✅ POST handler found"
+    else
+        echo "❌ POST handler missing"
+    fi
+else
+    echo "❌ No API route found"
+    echo "Expected: $API_ROUTE_APP or $API_ROUTE_PAGES"
+fi
+
+echo ""
+echo "🔍 Checking demo-context file..."
+DEMO_CONTEXT="lib/demo-context.tsx"
+
+if [[ -f "$DEMO_CONTEXT" ]]; then
+    echo "✅ Found demo context: $DEMO_CONTEXT"
+    echo ""
+    echo "📄 Demo mode detection logic:"
+    grep -A 5 -B 5 "isDemoMode" "$DEMO_CONTEXT" | head -20
+else
+    echo "❌ Demo context file not found: $DEMO_CONTEXT"
+fi
+
+echo ""
+echo "🔧 Creating enhanced contacts page with better debugging..."
+
+# Find the contacts page
+CONTACTS_PAGE=""
+if [[ -f "app/contacts/page.tsx" ]]; then
+    CONTACTS_PAGE="app/contacts/page.tsx"
+elif [[ -f "pages/contacts.tsx" ]]; then
+    CONTACTS_PAGE="pages/contacts.tsx"
+else
+    echo "❌ Could not find contacts page"
+    exit 1
+fi
+
+# Create backup
+BACKUP_FILE="${CONTACTS_PAGE}.backup.$(date +%Y%m%d_%H%M%S)"
+cp "$CONTACTS_PAGE" "$BACKUP_FILE"
+echo "💾 Backup created: $BACKUP_FILE"
+
+# Create enhanced version with detailed debugging
+cat > "$CONTACTS_PAGE" << 'EOF'
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -36,7 +109,8 @@ import {
   Play,
   Database,
   X,
-  AlertCircle
+  AlertCircle,
+  CheckCircle
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { useDemoMode } from '@/lib/demo-context'
@@ -61,100 +135,6 @@ interface Contact {
     funding_stage?: string
   }
 }
-
-// Local demo data - no API calls needed
-const DEMO_CONTACTS: Contact[] = [
-  {
-    id: 'demo-1',
-    first_name: 'Sarah',
-    last_name: 'Chen',
-    email: 'sarah.chen@nexustherapeutics.com',
-    phone: '+1-555-0123',
-    title: 'Chief Executive Officer',
-    role_category: 'Founder',
-    linkedin_url: 'https://linkedin.com/in/sarah-chen',
-    contact_status: 'not_contacted',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    companies: {
-      name: 'Nexus Therapeutics',
-      industry: 'Biotechnology',
-      funding_stage: 'Series A'
-    }
-  },
-  {
-    id: 'demo-2',
-    first_name: 'Michael',
-    last_name: 'Rodriguez',
-    email: 'mrodriguez@bioventures.com',
-    phone: '+1-555-0456',
-    title: 'Partner',
-    role_category: 'VC',
-    linkedin_url: 'https://linkedin.com/in/michael-rodriguez',
-    contact_status: 'contacted',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    companies: {
-      name: 'BioVentures Capital',
-      industry: 'Venture Capital',
-      funding_stage: 'N/A'
-    }
-  },
-  {
-    id: 'demo-3',
-    first_name: 'Dr. Emily',
-    last_name: 'Watson',
-    email: 'emily.watson@genomicsinc.com',
-    phone: '+1-555-0789',
-    title: 'Chief Scientific Officer',
-    role_category: 'Executive',
-    linkedin_url: 'https://linkedin.com/in/emily-watson-phd',
-    contact_status: 'responded',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    companies: {
-      name: 'Genomics Inc.',
-      industry: 'Biotechnology',
-      funding_stage: 'Series B'
-    }
-  },
-  {
-    id: 'demo-4',
-    first_name: 'James',
-    last_name: 'Park',
-    email: 'j.park@medtechfund.com',
-    phone: '+1-555-0321',
-    title: 'Managing Partner',
-    role_category: 'VC',
-    linkedin_url: 'https://linkedin.com/in/jamespark',
-    contact_status: 'interested',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    companies: {
-      name: 'MedTech Fund',
-      industry: 'Venture Capital',
-      funding_stage: 'N/A'
-    }
-  },
-  {
-    id: 'demo-5',
-    first_name: 'Dr. Lisa',
-    last_name: 'Thompson',
-    email: 'lisa.thompson@biorapid.com',
-    phone: '+1-555-0654',
-    title: 'Founder & CEO',
-    role_category: 'Founder',
-    linkedin_url: 'https://linkedin.com/in/lisathompson',
-    contact_status: 'not_interested',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    companies: {
-      name: 'BioRapid',
-      industry: 'Biotechnology',
-      funding_stage: 'Seed'
-    }
-  }
-]
 
 const statusColors = {
   'not_contacted': 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
@@ -181,6 +161,7 @@ export default function ContactsPage() {
   const [showAddContactDialog, setShowAddContactDialog] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [addingContact, setAddingContact] = useState(false)
+  const [debugInfo, setDebugInfo] = useState<any>({})
 
   // New contact form state
   const [newContact, setNewContact] = useState({
@@ -197,46 +178,61 @@ export default function ContactsPage() {
   })
 
   useEffect(() => {
+    console.log('🔄 Demo mode state changed:', { isDemoMode, isLoaded })
     if (isLoaded) {
-      loadContacts()
+      fetchContacts()
     }
   }, [isDemoMode, isLoaded])
 
-  const loadContacts = async () => {
+  const fetchContacts = async () => {
     try {
       setLoading(true)
       setError(null)
       
-      if (isDemoMode) {
-        // Demo mode: Use local mock data, no API calls
-        console.log('📊 Demo mode: Loading local mock data')
-        setContacts(DEMO_CONTACTS)
-        toast.success(`Loaded ${DEMO_CONTACTS.length} demo contacts`)
+      console.log('🔍 Fetching contacts...')
+      console.log('📊 Current demo mode:', isDemoMode)
+      
+      const response = await fetch('/api/contacts', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store'
+      })
+      
+      console.log('📡 Response status:', response.status)
+      console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()))
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Response not OK:', errorText)
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+      
+      const data = await response.json()
+      console.log('📊 Full API response:', data)
+      
+      const contactsArray = data.contacts || []
+      console.log('📋 Contacts array:', contactsArray)
+      setContacts(contactsArray)
+      
+      // Store debug info
+      setDebugInfo({
+        source: data.source,
+        contactCount: contactsArray.length,
+        isDemoMode,
+        timestamp: new Date().toISOString()
+      })
+      
+      const contactCount = contactsArray.length
+      if (data.source === 'demo' || !data.source) {
+        toast.success(`Loaded ${contactCount} demo contacts`)
       } else {
-        // Production mode: Call Supabase API
-        console.log('🔍 Production mode: Fetching from Supabase API')
-        
-        const response = await fetch('/api/contacts', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store'
-        })
-        
-        const data = await response.json()
-        console.log('📡 API response:', data)
-        
-        if (data.success) {
-          setContacts(data.contacts || [])
-          toast.success(`Loaded ${data.contacts?.length || 0} contacts from database`)
-        } else {
-          throw new Error(data.error || 'Failed to load contacts')
-        }
+        toast.success(`Loaded ${contactCount} contacts from database`)
       }
       
     } catch (error) {
-      console.error('❌ Failed to load contacts:', error)
+      console.error('❌ Failed to fetch contacts:', error)
       setError(error instanceof Error ? error.message : 'Unknown error occurred')
       toast.error(`Failed to load contacts: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setContacts([])
@@ -255,89 +251,100 @@ export default function ContactsPage() {
         return
       }
       
-      if (isDemoMode) {
-        // Demo mode: Add to local state only
-        console.log('📊 Demo mode: Adding contact locally')
-        
-        const newDemoContact: Contact = {
-          id: `demo-${Date.now()}`,
-          first_name: newContact.first_name.trim(),
-          last_name: newContact.last_name.trim(),
-          email: newContact.email.trim() || undefined,
-          phone: newContact.phone.trim() || undefined,
-          title: newContact.title.trim() || undefined,
-          role_category: newContact.role_category as any || undefined,
-          linkedin_url: newContact.linkedin_url.trim() || undefined,
-          contact_status: 'not_contacted',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          companies: newContact.company_name.trim() ? {
-            name: newContact.company_name.trim(),
-            industry: newContact.company_industry.trim() || undefined,
-            funding_stage: newContact.company_funding_stage || undefined
-          } : undefined
-        }
-        
-        setContacts(prev => [newDemoContact, ...prev])
-        toast.success(`Demo contact ${newDemoContact.first_name} ${newDemoContact.last_name} added!`)
-        
-      } else {
-        // Production mode: Save to Supabase
-        console.log('🔍 Production mode: Saving to Supabase')
-        
-        const contactData = {
-          first_name: newContact.first_name.trim(),
-          last_name: newContact.last_name.trim(),
-          email: newContact.email.trim() || null,
-          phone: newContact.phone.trim() || null,
-          title: newContact.title.trim() || null,
-          role_category: newContact.role_category || null,
-          linkedin_url: newContact.linkedin_url.trim() || null,
-          companies: newContact.company_name.trim() ? {
-            name: newContact.company_name.trim(),
-            industry: newContact.company_industry.trim() || null,
-            funding_stage: newContact.company_funding_stage || null
-          } : null
-        }
-        
-        const response = await fetch('/api/contacts', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(contactData)
-        })
-        
-        const data = await response.json()
-        
-        if (data.success && data.contact) {
-          setContacts(prev => [data.contact, ...prev])
-          toast.success(`Contact ${data.contact.first_name} ${data.contact.last_name} saved to database!`)
-        } else {
-          throw new Error(data.error || 'Failed to save contact')
-        }
+      // Prepare the contact data
+      const contactData = {
+        first_name: newContact.first_name.trim(),
+        last_name: newContact.last_name.trim(),
+        email: newContact.email.trim() || null,
+        phone: newContact.phone.trim() || null,
+        title: newContact.title.trim() || null,
+        role_category: newContact.role_category || null,
+        linkedin_url: newContact.linkedin_url.trim() || null,
+        companies: newContact.company_name.trim() ? {
+          name: newContact.company_name.trim(),
+          industry: newContact.company_industry.trim() || null,
+          funding_stage: newContact.company_funding_stage || null
+        } : null
       }
       
-      // Reset form and close dialog
-      setNewContact({
-        first_name: '',
-        last_name: '',
-        email: '',
-        phone: '',
-        title: '',
-        role_category: '',
-        linkedin_url: '',
-        company_name: '',
-        company_industry: '',
-        company_funding_stage: ''
+      console.log('➕ Adding new contact:', contactData)
+      console.log('📊 Current demo mode during add:', isDemoMode)
+      
+      const response = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(contactData)
       })
-      setShowAddContactDialog(false)
+      
+      console.log('📡 Add contact response status:', response.status)
+      console.log('📡 Add contact response headers:', Object.fromEntries(response.headers.entries()))
+      
+      const responseText = await response.text()
+      console.log('📡 Raw response text:', responseText)
+      
+      if (!response.ok) {
+        console.error('❌ Add contact failed:', response.status, responseText)
+        throw new Error(`HTTP ${response.status}: ${responseText}`)
+      }
+      
+      let result
+      try {
+        result = JSON.parse(responseText)
+      } catch (parseError) {
+        console.error('❌ Failed to parse response JSON:', parseError)
+        throw new Error('Invalid JSON response from server')
+      }
+      
+      console.log('✅ Contact added result:', result)
+      
+      // Add the contact to the local state
+      if (result.success && result.contact) {
+        setContacts(prev => [result.contact, ...prev])
+        toast.success(`Contact ${result.contact.first_name} ${result.contact.last_name} added successfully!`)
+        
+        // Reset form and close dialog
+        setNewContact({
+          first_name: '',
+          last_name: '',
+          email: '',
+          phone: '',
+          title: '',
+          role_category: '',
+          linkedin_url: '',
+          company_name: '',
+          company_industry: '',
+          company_funding_stage: ''
+        })
+        setShowAddContactDialog(false)
+      } else {
+        console.error('❌ Unexpected response structure:', result)
+        toast.error('Contact may not have been added properly')
+      }
       
     } catch (error) {
       console.error('❌ Error adding contact:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to add contact')
     } finally {
       setAddingContact(false)
+    }
+  }
+
+  const testApiEndpoint = async () => {
+    try {
+      console.log('🧪 Testing API endpoint...')
+      const response = await fetch('/api/contacts', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      const data = await response.json()
+      console.log('🧪 API test result:', data)
+      toast.success(`API test: ${response.status} - ${data.contacts?.length || 0} contacts`)
+    } catch (error) {
+      console.error('🧪 API test failed:', error)
+      toast.error('API test failed')
     }
   }
 
@@ -400,6 +407,30 @@ export default function ContactsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Debug Info Banner */}
+      <Card className="border-0 shadow-sm bg-yellow-50 dark:bg-yellow-900/20">
+        <CardContent className="p-4">
+          <div className="flex items-center space-x-3">
+            <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+            <div className="flex-1">
+              <p className="font-medium text-yellow-800 dark:text-yellow-200">Debug Information</p>
+              <div className="text-sm text-yellow-600 dark:text-yellow-400 mt-1">
+                <p>Demo Mode: {isDemoMode ? 'YES' : 'NO'} | Data Source: {debugInfo.source || 'unknown'} | Contacts: {contacts.length}</p>
+                <p>Last Updated: {debugInfo.timestamp ? new Date(debugInfo.timestamp).toLocaleTimeString() : 'never'}</p>
+              </div>
+            </div>
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={testApiEndpoint}
+              className="border-yellow-200 text-yellow-600 hover:bg-yellow-50"
+            >
+              Test API
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Mode Info Banner */}
       <Card className={`border-0 shadow-sm ${isDemoMode ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-green-50 dark:bg-green-900/20'}`}>
         <CardContent className="p-4">
@@ -411,12 +442,12 @@ export default function ContactsPage() {
             )}
             <div>
               <p className={`font-medium ${isDemoMode ? 'text-blue-800 dark:text-blue-300' : 'text-green-800 dark:text-green-300'}`}>
-                {isDemoMode ? 'Demo Mode Active' : 'Production Mode Active'}
+                {isDemoMode ? 'Demo Data Active' : 'Production Data Connected'}
               </p>
               <p className={`text-sm ${isDemoMode ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`}>
                 {isDemoMode 
-                  ? 'Using local mock data for testing and exploration'
-                  : 'Connected to Supabase database'
+                  ? 'Showing sample contacts for testing and exploration'
+                  : 'Live contacts from your Supabase database'
                 }
               </p>
             </div>
@@ -429,19 +460,18 @@ export default function ContactsPage() {
         <Card className="border-0 shadow-sm bg-red-50 dark:bg-red-900/20">
           <CardContent className="p-4">
             <div className="flex items-center space-x-3">
-              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-              <div className="flex-1">
-                <p className="font-medium text-red-800 dark:text-red-200">Error Loading Contacts</p>
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              <div className="text-red-600 dark:text-red-400">
+                <p className="font-medium">Connection Error</p>
+                <p className="text-sm">{error}</p>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={fetchContacts}
+                  className="mt-2 border-red-200 text-red-600 hover:bg-red-50"
+                >
+                  Try Again
+                </Button>
               </div>
-              <Button 
-                size="sm" 
-                variant="outline" 
-                onClick={loadContacts}
-                className="border-red-200 text-red-600 hover:bg-red-50"
-              >
-                Retry
-              </Button>
             </div>
           </CardContent>
         </Card>
@@ -458,7 +488,7 @@ export default function ContactsPage() {
         <div className="flex space-x-3">
           <Button 
             variant="outline" 
-            onClick={loadContacts}
+            onClick={fetchContacts}
             className="flex items-center space-x-2"
           >
             <RefreshCw className="w-4 h-4" />
@@ -515,151 +545,136 @@ export default function ContactsPage() {
 
       {/* Contacts Table */}
       <Card className="border-0 shadow-sm">
-        {contacts.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50 dark:bg-gray-800">
-                <TableHead className="w-12">
-                  <Checkbox
-                    checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0}
-                    onCheckedChange={handleSelectAll}
-                  />
-                </TableHead>
-                <TableHead className="text-gray-900 dark:text-white">Contact</TableHead>
-                <TableHead className="text-gray-900 dark:text-white">Company</TableHead>
-                <TableHead className="text-gray-900 dark:text-white">Role</TableHead>
-                <TableHead className="text-gray-900 dark:text-white">Status</TableHead>
-                <TableHead className="text-gray-900 dark:text-white">Last Contact</TableHead>
-                <TableHead className="text-gray-900 dark:text-white">Stage</TableHead>
-                <TableHead className="w-12"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredContacts.length > 0 ? (
-                filteredContacts.map((contact) => (
-                  <TableRow key={contact.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedContacts.includes(contact.id)}
-                        onCheckedChange={(checked) => handleSelectContact(contact.id, checked as boolean)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">
-                          {contact.first_name} {contact.last_name}
-                        </p>
-                        {contact.email && (
-                          <p className="text-sm text-gray-500 dark:text-gray-400">{contact.email}</p>
-                        )}
-                        {contact.title && (
-                          <p className="text-xs text-gray-400 dark:text-gray-500">{contact.title}</p>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        {contact.companies?.name && (
-                          <>
-                            <p className="font-medium text-gray-900 dark:text-white">{contact.companies.name}</p>
-                            {contact.companies.industry && (
-                              <p className="text-xs text-gray-400 dark:text-gray-500">{contact.companies.industry}</p>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {contact.role_category && (
-                        <Badge className={roleColors[contact.role_category]}>
-                          {contact.role_category}
-                        </Badge>
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50 dark:bg-gray-800">
+              <TableHead className="w-12">
+                <Checkbox
+                  checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0}
+                  onCheckedChange={handleSelectAll}
+                />
+              </TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Contact</TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Company</TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Role</TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Status</TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Last Contact</TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Stage</TableHead>
+              <TableHead className="w-12"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredContacts.length > 0 ? (
+              filteredContacts.map((contact) => (
+                <TableRow key={contact.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedContacts.includes(contact.id)}
+                      onCheckedChange={(checked) => handleSelectContact(contact.id, checked as boolean)}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">
+                        {contact.first_name} {contact.last_name}
+                      </p>
+                      {contact.email && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{contact.email}</p>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      {contact.contact_status && (
-                        <Badge className={statusColors[contact.contact_status]}>
-                          {contact.contact_status.replace('_', ' ')}
-                        </Badge>
+                      {contact.title && (
+                        <p className="text-xs text-gray-400 dark:text-gray-500">{contact.title}</p>
                       )}
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-600 dark:text-gray-400">
-                      {contact.last_contacted_at 
-                        ? new Date(contact.last_contacted_at).toLocaleDateString()
-                        : 'Never'
-                      }
-                    </TableCell>
-                    <TableCell>
-                      {contact.companies?.funding_stage && (
-                        <Badge variant="outline">{contact.companies.funding_stage}</Badge>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      {contact.companies?.name && (
+                        <>
+                          <p className="font-medium text-gray-900 dark:text-white">{contact.companies.name}</p>
+                          {contact.companies.industry && (
+                            <p className="text-xs text-gray-400 dark:text-gray-500">{contact.companies.industry}</p>
+                          )}
+                        </>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem>
-                            <Eye className="w-4 h-4 mr-2" />
-                            View Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Mail className="w-4 h-4 mr-2" />
-                            Send Email
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit Contact
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-red-600 dark:text-red-400">
-                            <Trash className="w-4 h-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-gray-500">
-                    No contacts match your search.
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {contact.role_category && (
+                      <Badge className={roleColors[contact.role_category]}>
+                        {contact.role_category}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {contact.contact_status && (
+                      <Badge className={statusColors[contact.contact_status]}>
+                        {contact.contact_status.replace('_', ' ')}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-gray-600 dark:text-gray-400">
+                    {contact.last_contacted_at 
+                      ? new Date(contact.last_contacted_at).toLocaleDateString()
+                      : 'Never'
+                    }
+                  </TableCell>
+                  <TableCell>
+                    {contact.companies?.funding_stage && (
+                      <Badge variant="outline">{contact.companies.funding_stage}</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuItem>
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Mail className="w-4 h-4 mr-2" />
+                          Send Email
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit Contact
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-red-600 dark:text-red-400">
+                          <Trash className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        ) : (
-          <CardContent className="p-12 text-center">
-            <div className="text-gray-500">
-              <p className="font-medium">No contacts found</p>
-              <p className="text-sm mt-1">
-                {isDemoMode 
-                  ? 'No demo data available'
-                  : error 
-                    ? 'Unable to load from database'
-                    : 'Add your first contact to get started'
-                }
-              </p>
-            </div>
-          </CardContent>
-        )}
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-12 text-gray-500">
+                  {contacts.length === 0 ? 'No contacts found. Try refreshing or add a new contact.' : 'No contacts match your search.'}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </Card>
 
-      {/* Add Contact Dialog */}
+      {/* Add Contact Dialog - Custom Modal */}
       {showAddContactDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add New Contact</h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {isDemoMode ? 'Add to demo data (local only)' : 'Save to Supabase database'}
+                  Add a new biotech industry contact to your database
                 </p>
               </div>
               <button
@@ -670,6 +685,7 @@ export default function ContactsPage() {
               </button>
             </div>
             
+            {/* Content */}
             <div className="p-6">
               <div className="grid gap-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -776,6 +792,7 @@ export default function ContactsPage() {
               </div>
             </div>
             
+            {/* Footer */}
             <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 dark:border-gray-700">
               <Button variant="outline" onClick={() => setShowAddContactDialog(false)}>
                 Cancel
@@ -785,14 +802,14 @@ export default function ContactsPage() {
                 disabled={!newContact.first_name || !newContact.last_name || addingContact}
                 className="bg-gradient-to-r from-blue-500 to-purple-600"
               >
-                {addingContact ? 'Adding...' : isDemoMode ? 'Add to Demo' : 'Save to Database'}
+                {addingContact ? 'Adding...' : 'Add Contact'}
               </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Email Dialog */}
+      {/* Custom Email Dialog */}
       {showEmailDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4">
@@ -831,3 +848,23 @@ export default function ContactsPage() {
     </div>
   )
 }
+EOF
+
+echo ""
+echo "✅ Enhanced Debugging Version Created!"
+echo "====================================="
+echo ""
+echo "This version includes:"
+echo "• Detailed console logging for all API calls"
+echo "• Debug info banner showing demo mode status and data source"
+echo "• Enhanced error handling and validation"
+echo "• 'Test API' button to manually test the endpoint"
+echo "• Better form validation and user feedback"
+echo ""
+echo "Next steps:"
+echo "1. Run the page and check browser console logs"
+echo "2. Click 'Test API' button to verify endpoint works"
+echo "3. Try adding a contact and watch console for detailed logs"
+echo "4. Check the debug banner to see if demo mode is correct"
+echo ""
+echo "Look for console messages starting with 🔍, 📡, ✅, or ❌"

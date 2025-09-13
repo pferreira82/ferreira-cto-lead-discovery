@@ -1,3 +1,27 @@
+#!/bin/bash
+
+echo "🔧 Fixing Demo Mode to Use Local Mock Data"
+echo "=========================================="
+
+# Find the contacts page
+CONTACTS_PAGE=""
+if [[ -f "app/contacts/page.tsx" ]]; then
+    CONTACTS_PAGE="app/contacts/page.tsx"
+elif [[ -f "pages/contacts.tsx" ]]; then
+    CONTACTS_PAGE="pages/contacts.tsx"
+else
+    echo "❌ Could not find contacts page"
+    exit 1
+fi
+
+# Create backup
+BACKUP_FILE="${CONTACTS_PAGE}.backup.$(date +%Y%m%d_%H%M%S)"
+cp "$CONTACTS_PAGE" "$BACKUP_FILE"
+echo "💾 Backup created: $BACKUP_FILE"
+
+echo "🔧 Creating contacts page with local demo data..."
+
+cat > "$CONTACTS_PAGE" << 'EOF'
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -831,3 +855,28 @@ export default function ContactsPage() {
     </div>
   )
 }
+EOF
+
+echo ""
+echo "✅ Fixed Demo Mode Logic!"
+echo "========================"
+echo ""
+echo "How it works now:"
+echo ""
+echo "DEMO MODE (isDemoMode = true):"
+echo "• Uses local DEMO_CONTACTS array"
+echo "• NO API calls to any service"
+echo "• Adding contacts updates local state only"
+echo "• Shows 5 mock contacts with realistic data"
+echo ""
+echo "PRODUCTION MODE (isDemoMode = false):"
+echo "• Makes API calls to /api/contacts (Supabase)"
+echo "• Adding contacts saves to Supabase database"
+echo "• Shows real data from your database"
+echo ""
+echo "Your side nav toggle should now work perfectly:"
+echo "• Toggle ON = Local mock data"
+echo "• Toggle OFF = Supabase database"
+echo "• No Apollo API calls anywhere"
+echo ""
+echo "Test it by toggling demo mode in your side nav!"

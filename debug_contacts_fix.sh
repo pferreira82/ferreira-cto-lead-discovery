@@ -1,0 +1,684 @@
+#!/bin/bash
+
+echo "Debugging and Fixing Contacts Page Issue"
+echo "========================================"
+
+# Check if the API file exists
+if [[ -f "app/api/contacts/route.ts" ]]; then
+    echo "✅ API file exists: app/api/contacts/route.ts"
+else
+    echo "❌ API file missing: app/api/contacts/route.ts"
+    echo "Creating it now..."
+    
+    # Create the directory and API file
+    mkdir -p app/api/contacts
+    
+    cat > app/api/contacts/route.ts << 'APIEOF'
+import { NextRequest, NextResponse } from 'next/server'
+
+// Demo contacts data
+const DEMO_CONTACTS = [
+  {
+    id: 'demo_contact_1',
+    company_id: 'demo_company_1',
+    first_name: 'Sarah',
+    last_name: 'Chen',
+    email: 'sarah.chen@nexustherapeutics.com',
+    phone: '+1-555-0123',
+    title: 'Chief Executive Officer',
+    role_category: 'Founder',
+    linkedin_url: 'https://linkedin.com/in/sarah-chen-biotech',
+    contact_status: 'not_contacted',
+    last_contacted_at: null,
+    created_at: '2024-01-15T10:30:00Z',
+    updated_at: '2024-01-15T10:30:00Z',
+    companies: {
+      name: 'Nexus Therapeutics',
+      industry: 'Biotechnology',
+      funding_stage: 'Series B'
+    }
+  },
+  {
+    id: 'demo_contact_2',
+    company_id: 'demo_company_2',
+    first_name: 'Michael',
+    last_name: 'Rodriguez',
+    email: 'michael.rodriguez@bioforgelabs.com',
+    phone: '+1-555-0456',
+    title: 'Chief Technology Officer',
+    role_category: 'Executive',
+    linkedin_url: 'https://linkedin.com/in/michael-rodriguez-cto',
+    contact_status: 'contacted',
+    last_contacted_at: '2024-01-10T14:20:00Z',
+    created_at: '2024-01-12T09:15:00Z',
+    updated_at: '2024-01-12T09:15:00Z',
+    companies: {
+      name: 'Bioforge Labs',
+      industry: 'Gene Therapy',
+      funding_stage: 'Series A'
+    }
+  },
+  {
+    id: 'demo_contact_3',
+    company_id: 'demo_company_3',
+    first_name: 'Emily',
+    last_name: 'Johnson',
+    email: 'emily.johnson@quantumbio.com',
+    phone: '+1-555-0789',
+    title: 'Co-Founder & Chief Scientific Officer',
+    role_category: 'Founder',
+    linkedin_url: 'https://linkedin.com/in/emily-johnson-phd',
+    contact_status: 'responded',
+    last_contacted_at: '2024-01-08T11:45:00Z',
+    created_at: '2024-01-08T08:30:00Z',
+    updated_at: '2024-01-08T08:30:00Z',
+    companies: {
+      name: 'Quantum Biosciences',
+      industry: 'Drug Discovery',
+      funding_stage: 'Seed'
+    }
+  },
+  {
+    id: 'demo_contact_4',
+    company_id: 'demo_company_4',
+    first_name: 'David',
+    last_name: 'Kim',
+    email: 'david.kim@meridianhealth.io',
+    phone: '+1-555-0321',
+    title: 'VP of Business Development',
+    role_category: 'Executive',
+    linkedin_url: 'https://linkedin.com/in/david-kim-bizdev',
+    contact_status: 'interested',
+    last_contacted_at: '2024-01-05T16:15:00Z',
+    created_at: '2024-01-05T13:20:00Z',
+    updated_at: '2024-01-05T13:20:00Z',
+    companies: {
+      name: 'Meridian Health',
+      industry: 'Digital Health',
+      funding_stage: 'Series C'
+    }
+  },
+  {
+    id: 'demo_contact_5',
+    company_id: 'demo_company_5',
+    first_name: 'Lisa',
+    last_name: 'Park',
+    email: 'lisa.park@catalystpharma.com',
+    title: 'Chief Medical Officer',
+    role_category: 'Executive',
+    linkedin_url: 'https://linkedin.com/in/lisa-park-md',
+    contact_status: 'not_interested',
+    last_contacted_at: '2024-01-03T12:30:00Z',
+    created_at: '2024-01-03T10:45:00Z',
+    updated_at: '2024-01-03T10:45:00Z',
+    companies: {
+      name: 'Catalyst Pharma',
+      industry: 'Pharmaceuticals',
+      funding_stage: 'Growth'
+    }
+  },
+  {
+    id: 'demo_contact_6',
+    company_id: 'demo_vc_1',
+    first_name: 'Robert',
+    last_name: 'Chen',
+    email: 'robert.chen@techventures.com',
+    phone: '+1-555-0654',
+    title: 'General Partner',
+    role_category: 'VC',
+    linkedin_url: 'https://linkedin.com/in/robert-chen-gp',
+    contact_status: 'contacted',
+    last_contacted_at: '2024-01-12T09:00:00Z',
+    created_at: '2024-01-12T09:00:00Z',
+    updated_at: '2024-01-12T09:00:00Z',
+    companies: {
+      name: 'TechVentures Capital',
+      industry: 'Venture Capital',
+      funding_stage: null
+    }
+  }
+]
+
+export async function GET(request: NextRequest) {
+  try {
+    console.log('Contacts API called')
+    
+    return NextResponse.json({
+      success: true,
+      contacts: DEMO_CONTACTS,
+      count: DEMO_CONTACTS.length,
+      source: 'demo'
+    })
+  } catch (error) {
+    console.error('Error in contacts API:', error)
+    
+    return NextResponse.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      contacts: [],
+      count: 0
+    }, { status: 500 })
+  }
+}
+APIEOF
+    
+    echo "✅ Created app/api/contacts/route.ts"
+fi
+
+# Now let's create a fixed version of the contacts page that handles errors better
+echo ""
+echo "Updating contacts page with better error handling..."
+
+# Check if contacts page exists in different locations
+CONTACTS_PAGE=""
+if [[ -f "app/contacts/page.tsx" ]]; then
+    CONTACTS_PAGE="app/contacts/page.tsx"
+elif [[ -f "pages/contacts.tsx" ]]; then
+    CONTACTS_PAGE="pages/contacts.tsx"
+elif [[ -f "components/contacts-page.tsx" ]]; then
+    CONTACTS_PAGE="components/contacts-page.tsx"
+else
+    echo "❌ Could not find contacts page. Looking for common locations..."
+    find . -name "*contact*" -name "*.tsx" -not -path "./node_modules/*" 2>/dev/null || echo "No contacts files found"
+    exit 1
+fi
+
+echo "📄 Found contacts page: $CONTACTS_PAGE"
+
+# Create backup
+BACKUP_FILE="${CONTACTS_PAGE}.backup.$(date +%Y%m%d_%H%M%S)"
+cp "$CONTACTS_PAGE" "$BACKUP_FILE"
+echo "💾 Backup created: $BACKUP_FILE"
+
+# Create the updated contacts page with simpler, more robust fetching
+cat > "$CONTACTS_PAGE" << 'PAGEEOF'
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { 
+  Search, 
+  Mail, 
+  MoreHorizontal, 
+  UserPlus,
+  Download,
+  RefreshCw,
+  Send,
+  Eye,
+  Edit,
+  Trash,
+  Play,
+  Database
+} from 'lucide-react'
+import { toast } from 'react-hot-toast'
+import { useDemoMode } from '@/lib/demo-context'
+
+interface Contact {
+  id: string
+  company_id?: string
+  first_name: string
+  last_name: string
+  email?: string
+  phone?: string
+  title?: string
+  role_category?: 'VC' | 'Founder' | 'Board Member' | 'Executive'
+  linkedin_url?: string
+  contact_status?: 'not_contacted' | 'contacted' | 'responded' | 'interested' | 'not_interested'
+  last_contacted_at?: string
+  created_at: string
+  updated_at: string
+  companies?: {
+    name: string
+    industry?: string
+    funding_stage?: string
+  }
+}
+
+const statusColors = {
+  'not_contacted': 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+  'contacted': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  'responded': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  'interested': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+  'not_interested': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+}
+
+const roleColors = {
+  'VC': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
+  'Founder': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  'Board Member': 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+  'Executive': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+}
+
+export default function ContactsPage() {
+  const { isDemoMode, isLoaded } = useDemoMode()
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedContacts, setSelectedContacts] = useState<string[]>([])
+  const [searchTerm, setSearchTerm] = useState('')
+  const [showEmailDialog, setShowEmailDialog] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isLoaded) {
+      fetchContacts()
+    }
+  }, [isDemoMode, isLoaded])
+
+  const fetchContacts = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      console.log('Fetching contacts...')
+      
+      // Simple fetch without complex demo wrapper
+      const response = await fetch('/api/contacts', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store'
+      })
+      
+      console.log('Response status:', response.status)
+      console.log('Response ok:', response.ok)
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+      
+      const data = await response.json()
+      console.log('Response data:', data)
+      
+      setContacts(data.contacts || [])
+      
+      // Show appropriate success message
+      const contactCount = data.contacts?.length || 0
+      if (data.source === 'demo' || !data.source) {
+        toast.success(`Loaded ${contactCount} demo contacts`)
+      } else {
+        toast.success(`Loaded ${contactCount} contacts from database`)
+      }
+      
+    } catch (error) {
+      console.error('Failed to fetch contacts:', error)
+      setError(error instanceof Error ? error.message : 'Unknown error occurred')
+      toast.error(`Failed to load contacts: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      
+      // Set empty array on error
+      setContacts([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filteredContacts = contacts.filter(contact => 
+    contact.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    contact.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (contact.email && contact.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (contact.companies?.name && contact.companies.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  )
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedContacts(filteredContacts.map(c => c.id))
+    } else {
+      setSelectedContacts([])
+    }
+  }
+
+  const handleSelectContact = (contactId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedContacts([...selectedContacts, contactId])
+    } else {
+      setSelectedContacts(selectedContacts.filter(id => id !== contactId))
+    }
+  }
+
+  // Show loading while context loads
+  if (!isLoaded) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Loading...</h1>
+          <p className="text-gray-600 dark:text-gray-400">Initializing contacts system...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Contacts</h1>
+            <p className="text-gray-600 dark:text-gray-400">Loading contacts...</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <CardContent className="p-6">
+                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-2"></div>
+                <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Mode Info Banner */}
+      <Card className={`border-0 shadow-sm ${isDemoMode ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-green-50 dark:bg-green-900/20'}`}>
+        <CardContent className="p-4">
+          <div className="flex items-center space-x-3">
+            {isDemoMode ? (
+              <Play className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            ) : (
+              <Database className="w-5 h-5 text-green-600 dark:text-green-400" />
+            )}
+            <div>
+              <p className={`font-medium ${isDemoMode ? 'text-blue-800 dark:text-blue-300' : 'text-green-800 dark:text-green-300'}`}>
+                {isDemoMode ? 'Demo Data Active' : 'Production Data Connected'}
+              </p>
+              <p className={`text-sm ${isDemoMode ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`}>
+                {isDemoMode 
+                  ? 'Showing sample contacts for testing and exploration'
+                  : 'Live contacts from your Supabase database'
+                }
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Error Banner */}
+      {error && (
+        <Card className="border-0 shadow-sm bg-red-50 dark:bg-red-900/20">
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-3">
+              <div className="text-red-600 dark:text-red-400">
+                <p className="font-medium">Connection Error</p>
+                <p className="text-sm">{error}</p>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={fetchContacts}
+                  className="mt-2 border-red-200 text-red-600 hover:bg-red-50"
+                >
+                  Try Again
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Contacts</h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Manage your biotech industry contacts and outreach • {contacts.length} total contacts
+          </p>
+        </div>
+        <div className="flex space-x-3">
+          <Button 
+            variant="outline" 
+            onClick={fetchContacts}
+            className="flex items-center space-x-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Refresh</span>
+          </Button>
+          <Button variant="outline" className="flex items-center space-x-2">
+            <Download className="w-4 h-4" />
+            <span>Export</span>
+          </Button>
+          <Button className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-purple-600">
+            <UserPlus className="w-4 h-4" />
+            <span>Add Contact</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* Search and Filters */}
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-6">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
+                <Input
+                  placeholder="Search contacts, companies, or emails..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+          </div>
+          
+          {selectedContacts.length > 0 && (
+            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
+              <span className="text-sm text-blue-800 dark:text-blue-400">
+                {selectedContacts.length} contact{selectedContacts.length > 1 ? 's' : ''} selected
+              </span>
+              <Button 
+                size="sm" 
+                onClick={() => setShowEmailDialog(true)}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Mail className="w-4 h-4 mr-2" />
+                Send Email to Selected
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Contacts Table */}
+      <Card className="border-0 shadow-sm">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50 dark:bg-gray-800">
+              <TableHead className="w-12">
+                <Checkbox
+                  checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0}
+                  onCheckedChange={handleSelectAll}
+                />
+              </TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Contact</TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Company</TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Role</TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Status</TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Last Contact</TableHead>
+              <TableHead className="text-gray-900 dark:text-white">Stage</TableHead>
+              <TableHead className="w-12"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredContacts.length > 0 ? (
+              filteredContacts.map((contact) => (
+                <TableRow key={contact.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedContacts.includes(contact.id)}
+                      onCheckedChange={(checked) => handleSelectContact(contact.id, checked as boolean)}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">
+                        {contact.first_name} {contact.last_name}
+                      </p>
+                      {contact.email && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{contact.email}</p>
+                      )}
+                      {contact.title && (
+                        <p className="text-xs text-gray-400 dark:text-gray-500">{contact.title}</p>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      {contact.companies?.name && (
+                        <>
+                          <p className="font-medium text-gray-900 dark:text-white">{contact.companies.name}</p>
+                          {contact.companies.industry && (
+                            <p className="text-xs text-gray-400 dark:text-gray-500">{contact.companies.industry}</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {contact.role_category && (
+                      <Badge className={roleColors[contact.role_category]}>
+                        {contact.role_category}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {contact.contact_status && (
+                      <Badge className={statusColors[contact.contact_status]}>
+                        {contact.contact_status.replace('_', ' ')}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-gray-600 dark:text-gray-400">
+                    {contact.last_contacted_at 
+                      ? new Date(contact.last_contacted_at).toLocaleDateString()
+                      : 'Never'
+                    }
+                  </TableCell>
+                  <TableCell>
+                    {contact.companies?.funding_stage && (
+                      <Badge variant="outline">{contact.companies.funding_stage}</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuItem>
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Mail className="w-4 h-4 mr-2" />
+                          Send Email
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit Contact
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-red-600 dark:text-red-400">
+                          <Trash className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-12 text-gray-500">
+                  {contacts.length === 0 ? 'No contacts found. Try refreshing or check your connection.' : 'No contacts match your search.'}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* Email Dialog */}
+      <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Send Email Campaign</DialogTitle>
+            <DialogDescription>
+              Send an email to {selectedContacts.length} selected contact{selectedContacts.length > 1 ? 's' : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Subject Line</label>
+              <Input placeholder="Technology Due Diligence Partnership Opportunity" />
+            </div>
+            <div className="flex justify-end space-x-3">
+              <Button variant="outline" onClick={() => setShowEmailDialog(false)}>
+                Cancel
+              </Button>
+              <Button className="bg-gradient-to-r from-blue-500 to-purple-600">
+                <Send className="w-4 h-4 mr-2" />
+                Send Email Campaign
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+PAGEEOF
+
+echo ""
+echo "✅ Debug and Fix Complete!"
+echo "========================="
+echo ""
+echo "What was fixed:"
+echo "• Created/verified app/api/contacts/route.ts exists"
+echo "• Simplified contacts page with better error handling"
+echo "• Removed complex demo API wrapper that might be failing"
+echo "• Added detailed error messages and logging"
+echo "• Added error banner to show what went wrong"
+echo "• Added 'Try Again' button for easy retry"
+echo ""
+echo "The contacts page should now:"
+echo "• Load demo contacts successfully"
+echo "• Show clear error messages if something fails"  
+echo "• Work without complex demo infrastructure"
+echo "• Display proper loading states"
+echo ""
+echo "If it still fails, check the browser console for detailed error messages."
+echo ""
