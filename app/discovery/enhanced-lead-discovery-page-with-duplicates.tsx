@@ -52,6 +52,8 @@ import { useDemoAPI } from '@/lib/hooks/use-demo-api'
 
 // ... (keeping all the existing interfaces as they are)
 
+const { isDemoMode, isLoaded } = useDemoMode()
+
 const [searchParams, setSearchParams] = useState({
     industries: ['Biotechnology', 'Pharmaceuticals'],
     fundingStages: ['Series A', 'Series B', 'Series C'],
@@ -70,20 +72,32 @@ const [isCheckingExisting, setIsCheckingExisting] = useState(false)
 const checkExistingData = async () => {
     setIsCheckingExisting(true)
     try {
-        const response = await fetchWithDemo('/api/discovery/check-existing', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(searchParams)
-        })
+        if (isDemoMode) {
+            // Demo mode: simulate checking existing data
+            console.log('📊 Demo mode: Simulating existing data check')
+            const mockCount = Math.floor(Math.random() * 50) + 10 // Random 10-60
+            setExistingDataCount(mockCount)
+            toast.success(`Found ${mockCount} existing companies in demo database`)
+        } else {
+            // Production mode: actual API call
+            const response = await fetch('/api/discovery/check-existing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(searchParams)
+            })
 
-        if (response.ok) {
-            const data = await response.json()
-            setExistingDataCount(data.count)
-            toast.success(`Found ${data.count} existing companies in your database`)
+            if (response.ok) {
+                const data = await response.json()
+                setExistingDataCount(data.count || 0)
+                toast.success(`Found ${data.count || 0} existing companies in your database`)
+            } else {
+                throw new Error('Failed to check existing data')
+            }
         }
     } catch (error) {
         console.error('Error checking existing data:', error)
         toast.error('Failed to check existing data')
+        setExistingDataCount(0)
     } finally {
         setIsCheckingExisting(false)
     }
